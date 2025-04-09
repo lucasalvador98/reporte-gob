@@ -11,8 +11,13 @@ def obtener_archivo_gitlab(repo_id, file_path, branch='main', token=None):
         st.error("Token de GitLab no proporcionado")
         return None
         
+    # Asegurar que el repo_id esté correctamente formateado
+    repo_id_encoded = requests.utils.quote(str(repo_id), safe='')
+    
+    # Asegurar que el file_path esté correctamente formateado
     file_path_encoded = requests.utils.quote(file_path, safe='')
-    url = f'https://gitlab.com/api/v4/projects/{repo_id}/repository/files/{file_path_encoded}/raw'
+    
+    url = f'https://gitlab.com/api/v4/projects/{repo_id_encoded}/repository/files/{file_path_encoded}/raw'
     headers = {'PRIVATE-TOKEN': token}
     params = {'ref': branch}
     
@@ -21,7 +26,7 @@ def obtener_archivo_gitlab(repo_id, file_path, branch='main', token=None):
         if response.status_code == 200:
             return response.content
         else:
-            st.error(f"Error al obtener archivo {file_path}: {response.status_code}")
+            st.error(f"Error al obtener archivo {file_path}: {response.status_code} - {response.text}")
             return None
     except Exception as e:
         st.error(f"Error de conexión: {str(e)}")
@@ -46,18 +51,15 @@ def obtener_lista_archivos(repo_id, branch='main', token=None):
         params = {'ref': branch, 'recursive': True}
         
         try:
-            st.info(f"Intentando conexión con: {url}")
             response = requests.get(url, headers=headers, params=params)
             
             if response.status_code == 200:
                 items = response.json()
                 archivos = [item['path'] for item in items if item['type'] == 'blob']
-                st.success(f"Conexión exitosa. {len(archivos)} archivos encontrados.")
                 return archivos
-            else:
-                st.warning(f"Respuesta: {response.status_code} - {response.text}")
         except Exception as e:
-            st.warning(f"Error: {str(e)}")
+            st.error(f"Error al obtener lista de archivos: {str(e)}")
+            continue
     
     # Intentar listar proyectos disponibles para ayudar al diagnóstico
     try:
@@ -91,7 +93,7 @@ def load_data_from_gitlab(repo_id, branch='main', token=None):
             return {}, {}
         
         # Filtrar por extensiones soportadas
-        extensiones = ['.parquet', '.csv', '.geojson']
+        extensiones = ['.parquet', '.csv', '.geojson', '.txt']  # Added .txt extension
         archivos_filtrados = [a for a in archivos if any(a.endswith(ext) for ext in extensiones)]
         
         # Diccionarios para datos y fechas
@@ -123,12 +125,18 @@ def load_data_from_gitlab(repo_id, branch='main', token=None):
                     df = pd.read_csv(io.BytesIO(contenido))
                 elif archivo.endswith('.geojson'):
                     df = gpd.read_file(io.BytesIO(contenido))
+                elif archivo.endswith('.txt'):
+                    # Handle text files properly
+                    df = pd.read_csv(io.BytesIO(contenido), sep='\t', encoding='utf-8')
                 else:
                     continue
                 
-                # Guardar en diccionarios
-                all_data[nombre] = df
-                all_dates[nombre] = time.strftime("%Y-%m-%d")
+                # Guardar en diccionarios - check if df is not empty
+                if df is not None and not df.empty:
+                    all_data[nombre] = df
+                    all_dates[nombre] = time.strftime("%Y-%m-%d")
+                else:
+                    st.warning(f"Archivo vacío: {nombre}")
                 
             except Exception as e:
                 st.warning(f"Error al procesar {archivo}: {str(e)}")
