@@ -79,6 +79,147 @@ def show_empleo_dashboard(data, dates):
         data: Diccionario de dataframes cargados desde GitLab
         dates: Diccionario de fechas de actualización de los archivos
     """
+    # Apply custom styles for better appearance
+    st.markdown("""
+        <style>
+        /* General styles */
+        .main {
+            background-color: #f8f9fa;
+            padding: 1rem;
+        }
+        
+        /* Header styles */
+        .dashboard-header {
+            background-color: #4e73df;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Tab styles */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+            border-radius: 8px;
+            background-color: #e9ecef;
+            padding: 5px;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            height: 50px;
+            border-radius: 8px;
+            padding: 10px 16px;
+            background-color: #e9ecef;
+            font-weight: 500;
+            color: #495057;
+            transition: all 0.3s ease;
+        }
+        
+        .stTabs [aria-selected="true"] {
+            background-color: #4e73df !important;
+            color: white !important;
+            font-weight: 600;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Card styles */
+        .metric-card {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: transform 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .metric-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #4e73df;
+        }
+        
+        .metric-label {
+            font-size: 14px;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+        
+        /* Section styles */
+        .section-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #343a40;
+            margin: 25px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #4e73df;
+        }
+        
+        /* Chart container */
+        .chart-container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        /* Info box */
+        .info-box {
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #e0e0e0;
+            background-color: #f8f9fa;
+            margin: 10px 0;
+            font-size: 0.9em;
+            color: #505050;
+        }
+        
+        /* Status indicators */
+        .status-success {background-color: #d1e7dd; border-left: 5px solid #198754;}
+        .status-info {background-color: #d0e3f1; border-left: 5px solid #0d6efd;}
+        .status-warning {background-color: #fff3cd; border-left: 5px solid #ffc107;}
+        .status-danger {background-color: #f8d7da; border-left: 5px solid #dc3545;}
+        
+        /* Table styles */
+        .styled-table {
+            border-collapse: collapse;
+            width: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .styled-table thead tr {
+            background-color: #4e73df;
+            color: white;
+            text-align: left;
+        }
+        
+        .styled-table th,
+        .styled-table td {
+            padding: 12px 15px;
+        }
+        
+        .styled-table tbody tr {
+            border-bottom: 1px solid #dddddd;
+        }
+        
+        .styled-table tbody tr:nth-of-type(even) {
+            background-color: #f3f3f3;
+        }
+        
+        .styled-table tbody tr:last-of-type {
+            border-bottom: 2px solid #4e73df;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
     if not data:
         st.info("No se pudieron cargar los datos de Empleo +26.")
         return
@@ -104,16 +245,28 @@ def show_empleo_dashboard(data, dates):
     except Exception as e:
         st.info(f"Se mostrarán los datos disponibles: {str(e)}")
     
-    # Mostrar información de actualización de datos
+    # Header with improved styling
+    st.markdown("""
+        <div class="dashboard-header">
+            <h1 style="margin:0; font-size:28px;">Dashboard de Empleo +26</h1>
+            <p style="margin:5px 0 0 0; opacity:0.8;">Análisis de inscripciones y empresas adheridas</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Mostrar información de actualización de datos con mejor estilo
     if dates and any(dates.values()):
         latest_date = max([d for d in dates.values() if d is not None], default=None)
         if latest_date:
-            st.caption(f"Última actualización de datos: {latest_date}")
+            st.markdown(f"""
+                <div style="background-color:#e9ecef; padding:10px; border-radius:5px; margin-bottom:20px; font-size:0.9em;">
+                    <i class="fas fa-sync-alt"></i> <strong>Última actualización:</strong> {latest_date}
+                </div>
+            """, unsafe_allow_html=True)
     else:
         latest_date = datetime.now()
     
-    # Crear pestañas para diferentes vistas
-    tab1, tab2 = st.tabs(["Inscripciones", "Empresas"])
+    # Crear pestañas para diferentes vistas con mejor estilo
+    tab1, tab2 = st.tabs(["📊 Inscripciones", "🏢 Empresas"])
     
     with tab1:
         if has_postulaciones and has_inscripciones and has_inscriptos:
@@ -121,13 +274,21 @@ def show_empleo_dashboard(data, dates):
                              df_poblacion if has_poblacion else pd.DataFrame(), 
                              geojson_data, latest_date)
         else:
-            st.info("No hay datos suficientes para mostrar la vista de inscripciones.")
+            st.markdown("""
+                <div class="info-box status-warning">
+                    <strong>Información:</strong> No hay datos suficientes para mostrar la vista de inscripciones.
+                </div>
+            """, unsafe_allow_html=True)
     
     with tab2:
         if has_empresas:
             show_companies(df_empresas, geojson_data)
         else:
-            st.info("No hay datos de empresas disponibles.")
+            st.markdown("""
+                <div class="info-box status-warning">
+                    <strong>Información:</strong> No hay datos de empresas disponibles.
+                </div>
+            """, unsafe_allow_html=True)
 
 def show_companies(df_empresas, geojson_data):
     # Asegúrate de que las columnas numéricas sean del tipo correcto
@@ -165,10 +326,11 @@ def show_companies(df_empresas, geojson_data):
     else:
         df_empresas_puestos = pd.DataFrame()
     
-    # Resto del código de visualización
+    # Improved section title
+    st.markdown('<div class="section-title">Programa Primer Paso - PERFIL de la demanda por categorías</div>', unsafe_allow_html=True)
+    
+    # Resto del código de visualización con mejoras visuales
     if not df_empresas_puestos.empty and 'N_DEPARTAMENTO' in df_empresas_puestos.columns:
-        st.markdown("### Programa Primer Paso - PERFIL de la demanda por categorías")
-
         with st.expander("Selecciona los departamentos (haz clic para expandir)"):
             departamentos_unicos = df_empresas_puestos['N_DEPARTAMENTO'].unique()
             departamentos_seleccionados = st.multiselect(
@@ -176,7 +338,8 @@ def show_companies(df_empresas, geojson_data):
                 options=departamentos_unicos,
                 default=departamentos_unicos.tolist(),
                 help='Mantén presionada la tecla Ctrl (o Cmd en Mac) para seleccionar múltiples opciones.',
-                label_visibility="collapsed"
+                label_visibility="collapsed",
+                key="departamentos_multiselect"  # Added unique key
             )
 
         df_empresas_puestos = df_empresas_puestos[df_empresas_puestos['N_DEPARTAMENTO'].isin(departamentos_seleccionados)]
@@ -186,35 +349,41 @@ def show_companies(df_empresas, geojson_data):
             top_10_categorias = df_puesto_agg.groupby('N_CATEGORIA_EMPLEO')['CUIT'].nunique().nlargest(10).index
             df_puesto_agg_top10 = df_puesto_agg[df_puesto_agg['N_CATEGORIA_EMPLEO'].isin(top_10_categorias)]
 
-            st.markdown("""<div style='padding: 15px; border-radius: 5px; border: 1px solid #e0e0e0; background-color: #f8f9fa;margin-top: 10px; font-size: 0.9em;color: #505050;'>Este gráfico representa las empresas adheridas al programa PPP, que cargaron el PERFIL de su demanda, expresado en categorias.</div>""", unsafe_allow_html=True)
+            st.markdown("""<div class="info-box">Este gráfico representa las empresas adheridas al programa PPP, que cargaron el PERFIL de su demanda, expresado en categorias.</div>""", unsafe_allow_html=True)
             
+            # Improved chart with better colors and styling
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             stacked_bar_chart_2 = alt.Chart(df_puesto_agg_top10).mark_bar().encode(
                 x=alt.X('CUIT:Q', title='Cantidad de Empleados'),
                 y=alt.Y('N_CATEGORIA_EMPLEO:N', title='Categoría de Empleo', sort='-x'),
-                color=alt.Color('NOMBRE_TIPO_EMPRESA:N', title='Tipo de Empresa'),
+                color=alt.Color('NOMBRE_TIPO_EMPRESA:N', title='Tipo de Empresa', scale=alt.Scale(scheme='blues')),
                 tooltip=['N_CATEGORIA_EMPLEO', 'NOMBRE_TIPO_EMPRESA', 'CUIT']
             ).properties(width=600, height=400)
             st.altair_chart(stacked_bar_chart_2, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("<hr style='border: 1px solid #e0e0e0; margin: 20px 0;'>", unsafe_allow_html=True)
 
-    # Métricas y tabla final
+    # Métricas y tabla final con mejor diseño
     empresas_adh = df_display['CUIT'].nunique()
-    col1, col2 = st.columns([1, 2])
+    
+    # Improved metric display
+    st.markdown("""
+        <div class="metric-card">
+            <div class="metric-label">Empresas Adheridas</div>
+            <div class="metric-value">{:,}</div>
+        </div>
+    """.format(empresas_adh), unsafe_allow_html=True)
 
-    with col1:
-        st.metric(label="Empresas Adheridas", value=empresas_adh)
+    st.markdown("""<div class="info-box">Las empresas en esta tabla se encuentran adheridas a uno o más programas de empleo, han cumplido con los requisitos establecidos y han proporcionado sus datos a través de los registros de programasempleo.cba.gov.ar</div>""", unsafe_allow_html=True)
 
-    with col2:
-        st.markdown("""<div style='padding: 15px; border-radius: 5px; border: 1px solid #e0e0e0; background-color: #f8f9fa;margin-top: 10px; font-size: 0.9em;color: #505050;'>Las empresas en esta tabla se encuentran adheridas a uno o más programas de empleo, han cumplido con los requisitos establecidos y han proporcionado sus datos a través de los registros de programasempleo.cba.gov.ar</div>""", unsafe_allow_html=True)
-
-    # Mostrar el DataFrame sin formato especial
-    st.dataframe(df_display, hide_index=True) 
+    # Mostrar el DataFrame con mejor estilo
+    st.dataframe(df_display, hide_index=True, use_container_width=True)
 
     st.markdown("<hr style='border: 1px solid #e0e0e0; margin: 20px 0;'>", unsafe_allow_html=True)
 
-    # --- Nuevo apartado: Perfil de Demanda ---
-    st.markdown("## Perfil de Demanda")
+    # --- Nuevo apartado: Perfil de Demanda con mejor estilo ---
+    st.markdown('<div class="section-title">Perfil de Demanda</div>', unsafe_allow_html=True)
 
     # Filtrar solo los datos que tengan información de puesto y categoría
     required_columns = ['N_EMPRESA', 'CUIT', 'N_PUESTO_EMPLEO', 'N_CATEGORIA_EMPLEO']
@@ -224,23 +393,30 @@ def show_companies(df_empresas, geojson_data):
         df_perfil_demanda = pd.DataFrame()
 
     if df_perfil_demanda.empty:
-        st.info("No hay datos disponibles de perfil de demanda.")
+        st.markdown("""
+            <div class="info-box status-info">
+                <strong>Información:</strong> No hay datos disponibles de perfil de demanda.
+            </div>
+        """, unsafe_allow_html=True)
     else:
         # Crear las dos columnas
         col1, col2 = st.columns(2)
 
-        # --- Visualización 1: Tabla Agrupada (en col1) ---
-        with col1: # Cambio
-            st.subheader("Puestos y Categorías Demandadas por Empresa")
+        # --- Visualización 1: Tabla Agrupada (en col1) con mejor estilo ---
+        with col1:
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown('<h3 style="font-size: 18px; margin-bottom: 15px;">Puestos y Categorías Demandadas por Empresa</h3>', unsafe_allow_html=True)
             # Agrupar por empresa, puesto y categoría, sin columna de cantidad
             df_grouped = df_perfil_demanda.groupby(['N_EMPRESA','CUIT','N_PUESTO_EMPLEO', 'N_CATEGORIA_EMPLEO']).size().reset_index()
             # Eliminar la columna "0" que se crea
             df_grouped = df_grouped.drop(columns=[0])
-            st.dataframe(df_grouped, hide_index=True)
+            st.dataframe(df_grouped, hide_index=True, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- Visualización 2: Gráfico de Barras por Categoría (Top 10) (en col2) ---
+        # --- Visualización 2: Gráfico de Barras por Categoría (Top 10) (en col2) con mejor estilo ---
         with col2:
-            st.subheader("Top 10 - Distribución de Categorías de Empleo")
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown('<h3 style="font-size: 18px; margin-bottom: 15px;">Top 10 - Distribución de Categorías de Empleo</h3>', unsafe_allow_html=True)
 
             # Agrupar por categoría y contar las ocurrencias
             df_cat_count = df_perfil_demanda.groupby('N_CATEGORIA_EMPLEO')['CUIT'].nunique().reset_index(name='Empresas que Buscan')
@@ -259,12 +435,16 @@ def show_companies(df_empresas, geojson_data):
             else:
                 df_cat_count_final = df_cat_count.copy()
 
-                        # Crear gráfico de barras (sin configuración)
-            chart_cat = alt.Chart(df_cat_count_final).mark_bar().encode( 
+            # Improved chart with better colors
+            chart_cat = alt.Chart(df_cat_count_final).mark_bar(
+                cornerRadiusTopRight=5,
+                cornerRadiusBottomRight=5
+            ).encode( 
                 x=alt.X('Empresas que Buscan', title=''),  
                 y=alt.Y('N_CATEGORIA_EMPLEO', sort='-x', title=''), 
                 tooltip=['N_CATEGORIA_EMPLEO', 'Empresas que Buscan'],
-                text=alt.Text('Empresas que Buscan', format=',d') 
+                text=alt.Text('Empresas que Buscan', format=',d'),
+                color=alt.value('#4e73df')  # Consistent color scheme
             ).properties(
                 width=600,
                 height=400
@@ -274,7 +454,8 @@ def show_companies(df_empresas, geojson_data):
             text = alt.Chart(df_cat_count_final).mark_text(
                 align='left',
                 baseline='middle',
-                dx=3 
+                dx=3,
+                color='white'  # Better contrast for text
             ).encode(
                 x=alt.X('Empresas que Buscan', title=''),  
                 y=alt.Y('N_CATEGORIA_EMPLEO', sort='-x', title=''), 
@@ -289,10 +470,11 @@ def show_companies(df_empresas, geojson_data):
             
             # Mostrar el gráfico combinado
             st.altair_chart(combined_chart, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_poblacion, geojson_data, file_date):
     """
-    Muestra la vista de inscripciones
+    Muestra la vista de inscripciones con mejor estilo visual
     
     Args:
         df_postulaciones_fup: DataFrame de vt_inscripciones_empleo.parquet
@@ -309,7 +491,11 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
 
     # Verificar que los DataFrames no estén vacíos
     if df_postulaciones_fup is None or df_inscripciones is None or df_inscriptos is None:
-        st.info("Uno o más DataFrames necesarios no están disponibles.")
+        st.markdown("""
+            <div class="info-box status-warning">
+                <strong>Información:</strong> Uno o más DataFrames necesarios no están disponibles.
+            </div>
+        """, unsafe_allow_html=True)
         return
     
     try:
@@ -382,10 +568,15 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
                 help="Descarga el reporte completo de PPP y Empleo+26 en formato Excel"
             )
 
-        # REPORTE PPP
+       # REPORTE PPP con mejor estilo
         file_date_inscripciones = pd.to_datetime(file_date) if file_date else datetime.now()
         file_date_inscripciones = file_date_inscripciones - timedelta(hours=3)
-        st.write(f"Datos actualizados al: {file_date_inscripciones.strftime('%d/%m/%Y %H:%M:%S')}")
+        
+        st.markdown(f"""
+            <div style="background-color:#e9ecef; padding:10px; border-radius:5px; margin-bottom:20px; font-size:0.9em;">
+                <i class="fas fa-calendar-alt"></i> <strong>Datos actualizados al:</strong> {file_date_inscripciones.strftime('%d/%m/%Y %H:%M:%S')}
+            </div>
+        """, unsafe_allow_html=True)
 
         # Calcular métricas solo si los DataFrames tienen datos
         if not df_match_ppp.empty and 'CUIL' in df_match_ppp.columns:
@@ -450,89 +641,76 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
             porcentaje_completo = 0
             porcentaje_parcial = 0
 
-        st.markdown("### Programa Primer Paso")
+        # Improved section title
+        st.markdown('<div class="section-title">Programa Primer Paso</div>', unsafe_allow_html=True)
         
+        # Improved metric cards in columns
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown(
-                f"""
-                <div style="background-color:#d0e3f1;padding:10px;border-radius:5px;">
-                    <strong>Total Postulantes PPP</strong><br>
-                    <span style="font-size:24px;">{total_postulantes_ppp}</span>
-                                </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            st.markdown(f"""
+                <div class="metric-card status-info">
+                    <div class="metric-label">Total Postulantes PPP</div>
+                    <div class="metric-value">{total_postulantes_ppp:,}</div>
+                </div>
+            """, unsafe_allow_html=True)
         
         with col2:
-            st.markdown(
-                f"""
-                <div style="background-color:#d0e3f1;padding:10px;border-radius:5px;">
-                    <strong>Total Match PPP</strong><br>
-                    <span style="font-size:24px;">{total_match_ppp}</span>
+            st.markdown(f"""
+                <div class="metric-card status-info">
+                    <div class="metric-label">Total Match PPP</div>
+                    <div class="metric-value">{total_match_ppp:,}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
         
-        st.markdown("#### Distribución de Postulantes")
+        # Improved subsection title
+        st.markdown('<h3 style="font-size: 18px; margin: 20px 0 15px 0;">Distribución de Postulantes</h3>', unsafe_allow_html=True)
         
+        # Improved metric cards in columns
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
-            st.markdown(
-                f"""
-                <div style="background-color:#f8d7da;padding:10px;border-radius:5px;">
-                    <strong>Rechazados</strong><br>
-                    <span style="font-size:24px;">{total_rechazos}</span>
+            st.markdown(f"""
+                <div class="metric-card status-danger" style="padding: 15px;">
+                    <div class="metric-label">Rechazados</div>
+                    <div class="metric-value" style="font-size: 22px;">{total_rechazos:,}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
         
         with col2:
-            st.markdown(
-                f"""
-                <div style="background-color:#f8d7da;padding:10px;border-radius:5px;">
-                    <strong>Empresa No Apta</strong><br>
-                    <span style="font-size:24px;">{total_empresa_no_apta}</span>
+            st.markdown(f"""
+                <div class="metric-card status-danger" style="padding: 15px;">
+                    <div class="metric-label">Empresa No Apta</div>
+                    <div class="metric-value" style="font-size: 22px;">{total_empresa_no_apta:,}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
 
         with col3:
-            st.markdown(
-                f"""
-                <div style="background-color:#ffe4e1;padding:10px;border-radius:5px;">
-                    <strong>Fuera de Cupo de Empresa</strong><br>
-                    <span style="font-size:24px;">{total_fuera_cupo_empresa}</span>
+            st.markdown(f"""
+                <div class="metric-card status-warning" style="padding: 15px;">
+                    <div class="metric-label">Fuera de Cupo</div>
+                    <div class="metric-value" style="font-size: 22px;">{total_fuera_cupo_empresa:,}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
         
         with col4:
-            st.markdown(
-                f"""
-                <div style="background-color:#d0e3f1;padding:10px;border-radius:5px;">
-                    <strong>Postulantes Aptos (repesca)</strong><br>
-                    <span style="font-size:24px;">{total_repesca_ppp}</span>
+            st.markdown(f"""
+                <div class="metric-card status-info" style="padding: 15px;">
+                    <div class="metric-label">Aptos (repesca)</div>
+                    <div class="metric-value" style="font-size: 22px;">{total_repesca_ppp:,}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
+            
         with col5:
-            st.markdown(
-                f"""
-                <div style="background-color:#d1e7dd;padding:10px;border-radius:5px;">
-                    <strong>Beneficiarios PPP</strong><br>
-                    <span style="font-size:24px;">{total_benef_ppp}</span>
+            st.markdown(f"""
+                <div class="metric-card status-success" style="padding: 15px;">
+                    <div class="metric-label">Beneficiarios PPP</div>
+                    <div class="metric-value" style="font-size: 22px;">{total_benef_ppp:,}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
+        
+        # Improved subsection title
+        st.markdown('<h3 style="font-size: 18px; margin: 20px 0 15px 0;">PPP-cti</h3>', unsafe_allow_html=True)
         
         st.markdown("#### PPP-cti")
 
