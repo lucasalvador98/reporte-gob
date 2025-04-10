@@ -16,15 +16,13 @@ def show_bco_gente_dashboard(data, dates):
     try:
         df_global = data.get('vt_nomina_rep_dpto_localidad.parquet')
         df_recupero = data.get('VT_NOMINA_REP_RECUPERO_X_ANIO.parquet')
-        df_detalle_recupero = data.get('Detalle_recupero.csv')
         geojson_data = data.get('capa_departamentos_2010.geojson')
-        df_departamentos = data.get('departamentos_poblacion.txt')
+        df_departamentos = data.get('LOCALIDAD CIRCUITO ELECTORAL GEO Y ELECTORES - USAR.txt')
         
         # Verificar silenciosamente si los archivos existen
         has_global_data = df_global is not None and not df_global.empty
         has_recupero_data = df_recupero is not None and not df_recupero.empty
         has_geojson_data = geojson_data is not None
-        has_detalle_recupero = df_detalle_recupero is not None and not df_detalle_recupero.empty
         
     except Exception as e:
         st.info("No se pudieron procesar algunos datos. Mostrando información disponible.")
@@ -47,7 +45,7 @@ def show_bco_gente_dashboard(data, dates):
     
     with tab2:
         if has_recupero_data and has_geojson_data:
-            mostrar_recupero(df_recupero, df_detalle_recupero, geojson_data)
+            mostrar_recupero(df_recupero, df_departamentos, geojson_data)
         else:
             st.info("No hay datos suficientes para mostrar la vista de recupero.")
     
@@ -195,7 +193,7 @@ def mostrar_global(geojson_data, df_departamentos, df_global, df_recupero=None):
     if st.button("Aplicar Filtros"):
         st.success(f"Filtros aplicados: desde {fecha_inicio_global} hasta {fecha_fin_global}.")
 
-def mostrar_recupero(df_recupero, df_detalle_recupero, df_departamentos, geojson_data):
+def mostrar_recupero(df_recupero, df_departamentos, geojson_data):
     
     # --- Procesamiento y Validación de df_recupero ---
     if 'FEC_FORM' not in df_recupero.columns:
@@ -292,23 +290,13 @@ def mostrar_recupero(df_recupero, df_detalle_recupero, df_departamentos, geojson
     ## --- Divisor ---
     st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
 
-    # --- Calculo de deuda total y prescripta desde df_detalle_recupero ---
-    if df_detalle_recupero is not None and not df_detalle_recupero.empty:
-        deuda_total_detalle = df_detalle_recupero['DEUDA_TOTAL'].sum() if 'DEUDA_TOTAL' in df_detalle_recupero.columns else 0
-        deuda_prescripta_detalle = df_detalle_recupero['DEUDA_PRESCRIPTA'].sum() if 'DEUDA_PRESCRIPTA' in df_detalle_recupero.columns else 0
-        deuda_vencida_detalle = df_detalle_recupero['DEUDA_VENCIDA'].sum() if 'DEUDA_VENCIDA' in df_detalle_recupero.columns else 0
-        deuda_no_vencida_detalle = df_detalle_recupero['DEUDA_NO_VENCIDA'].sum() if 'DEUDA_NO_VENCIDA' in df_detalle_recupero.columns else 0
+    # --- Calculo de deuda total y prescripta desde df_recupero ---
+    deuda_total_detalle = df_recupero['DEUDA_TOTAL'].sum() if 'DEUDA_TOTAL' in df_recupero.columns else 0
+    deuda_vencida_detalle = df_recupero['DEUDA_VENCIDA'].sum() if 'DEUDA_VENCIDA' in df_recupero.columns else 0
+    deuda_no_vencida_detalle = df_recupero['DEUDA_NO_VENCIDA'].sum() if 'DEUDA_NO_VENCIDA' in df_recupero.columns else 0
 
-    else:
-        deuda_total_detalle = 0
-        deuda_prescripta_detalle = 0
-        deuda_vencida_detalle = 0
-        deuda_no_vencida_detalle = 0
-        st.warning("df_detalle_recupero esta vacio, no se pueden mostrar los datos de Deuda Total y deuda Prescripta")
-
-
-    # --- Mostrar tarjetas de DEUDA VENCIDA, DEUDA NO VENCIDA, DEUDA TOTAL Y PRESCRIPTA---
-    col5, col6, col8, col9 = st.columns(4)
+    # --- Mostrar tarjetas de DEUDA VENCIDA, DEUDA NO VENCIDA, DEUDA TOTAL---
+    col5, col6, col8,  = st.columns(3)
 
     with col5:
         st.markdown(cuadro_estilo.format(
@@ -327,12 +315,6 @@ def mostrar_recupero(df_recupero, df_detalle_recupero, df_departamentos, geojson
             titulo="DEUDA TOTAL",
             cantidad="${:,.2f}".format(deuda_total_detalle),
             bg_color="#f2dede", text_color="#a94442"), unsafe_allow_html=True)
-
-    with col9:
-            st.markdown(cuadro_estilo.format(
-                titulo="DEUDA PRESCRIPTA",
-                cantidad="${:,.2f}".format(deuda_prescripta_detalle),
-                bg_color="#f9e79f", text_color="#8a6d3b"), unsafe_allow_html=True)
 
    
     ## --- Divisor ---
@@ -358,46 +340,3 @@ def mostrar_recupero(df_recupero, df_detalle_recupero, df_departamentos, geojson
             st.warning("No se encontraron datos para la serie de tiempo.")
     else:
         st.warning("No se encontró la columna 'DEUDA' para generar la serie de tiempo.")
-
-
-    ## --- Divisor ---
-    st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
-
-    # --- Nueva Tabla: Agrupación de Formularios por Cuotas Prescriptas ---
-    st.subheader("Cantidad de Formularios por Rangos de Cuotas Prescriptas")
-
-    if df_detalle_recupero is not None and not df_detalle_recupero.empty and 'CUOTAS_PRESCRIPTAS' in df_detalle_recupero.columns:
-        # Definir los rangos de cuotas
-        bins = [0, 5, 10, 15, 20, float('inf')]
-        labels = ['1 a 5', '6 a 10', '11 a 15', '16 a 20', 'Más de 20']
-
-        # Crear una nueva columna con los rangos
-        df_detalle_recupero['Rango_Cuotas'] = pd.cut(df_detalle_recupero['CUOTAS_PRESCRIPTAS'], bins=bins, labels=labels, right=False)
-
-        # Agrupar por rangos y contar la cantidad de formularios
-        if 'ID_FORMULARIO' in df_detalle_recupero.columns:
-          conteo_por_rango = df_detalle_recupero.groupby('Rango_Cuotas')['ID_FORMULARIO'].nunique().reset_index()
-          conteo_por_rango.rename(columns={'ID_FORMULARIO': 'Cantidad de Formularios'}, inplace=True)
-        elif 'ID_FORMULARIO_LINEA' in df_detalle_recupero.columns:
-          conteo_por_rango = df_detalle_recupero.groupby('Rango_Cuotas')['ID_FORMULARIO_LINEA'].nunique().reset_index()
-          conteo_por_rango.rename(columns={'ID_FORMULARIO_LINEA': 'Cantidad de Formularios'}, inplace=True)
-        elif 'id_formulario_linea' in df_detalle_recupero.columns:
-          conteo_por_rango = df_detalle_recupero.groupby('Rango_Cuotas')['id_formulario_linea'].nunique().reset_index()
-          conteo_por_rango.rename(columns={'id_formulario_linea': 'Cantidad de Formularios'}, inplace=True)
-
-        
-        else:
-          st.error("No se encontró una columna que identifique de forma única a los formularios en 'df_detalle_recupero'. Se intentó con: ID_FORMULARIO , ID_FORMULARIO_LINEA, id_formulario_linea .")
-          return
-
-        
-        # Elimino el ultimo label para no mostrar  "Mas de 20" , ya que la consiga del trabajo es solo mostrar hasta 20
-        conteo_por_rango = conteo_por_rango[conteo_por_rango['Rango_Cuotas'] != 'Más de 20']
-
-        # Mostrar la tabla en Streamlit
-        st.dataframe(conteo_por_rango, hide_index=True)
-
-
-    else:
-        st.warning("No se puede mostrar la tabla de rangos de cuotas prescriptas.  Verifica que el DataFrame 'df_detalle_recupero' este cargado y contenga la columna 'CUOTAS_PRESCRIPTAS'.")
-

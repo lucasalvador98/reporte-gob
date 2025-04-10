@@ -484,10 +484,6 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
         geojson_data: Datos GeoJSON para mapas
         file_date: Fecha de actualización de los archivos
     """
-    #df_postulaciones_fup Este es vt_inscripciones_empleo.parquet
-    #df_inscripciones este es VT_INSCRIPCIONES_EMPLEO_EMPRESAS.parquet
-    # df_inscriptos este es VT_REPORTES_PPP_MAS26.parquet
-    # df_poblacion este va ser poblacion_departamentos.csv pero todavia no esta asi que arma todo para luego agregarlo
 
     # Verificar que los DataFrames no estén vacíos
     if df_postulaciones_fup is None or df_inscripciones is None or df_inscriptos is None:
@@ -712,46 +708,37 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
         # Improved subsection title
         st.markdown('<h3 style="font-size: 18px; margin: 20px 0 15px 0;">PPP-cti</h3>', unsafe_allow_html=True)
         
-        st.markdown("#### PPP-cti")
+        st.markdown('<div class="section-title">PPP-cti</div>', unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.markdown(
-                f"""
-                <div style="background-color:#d0e3f1;padding:10px;border-radius:5px;">
-                    <strong>CTI Inscriptos PPP</strong><br>
-                    <span style="font-size:24px;">{df_cti_inscripto_ppp['CUIL'].nunique() if not df_cti_inscripto_ppp.empty and 'CUIL' in df_cti_inscripto_ppp.columns else 0}</span>
+            st.markdown(f"""
+                <div class="metric-card status-info" style="padding: 15px;">
+                    <div class="metric-label">CTI Inscriptos PPP</div>
+                    <div class="metric-value" style="font-size: 22px;">{df_cti_inscripto_ppp['CUIL'].nunique() if not df_cti_inscripto_ppp.empty and 'CUIL' in df_cti_inscripto_ppp.columns else 0}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
         
         with col2:
-            st.markdown(
-                f"""
-                <div style="background-color:#d0e3f1;padding:10px;border-radius:5px;">
-                    <strong>CTI Válidos PPP</strong><br>
-                    <span style="font-size:24px;">{df_cti_validos_ppp['CUIL'].nunique() if not df_cti_validos_ppp.empty and 'CUIL' in df_cti_validos_ppp.columns else 0}</span>
+            st.markdown(f"""
+                <div class="metric-card status-info" style="padding: 15px;">
+                    <div class="metric-label">CTI Válidos PPP</div>
+                    <div class="metric-value" style="font-size: 22px;">{df_cti_validos_ppp['CUIL'].nunique() if not df_cti_validos_ppp.empty and 'CUIL' in df_cti_validos_ppp.columns else 0}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
         
         with col3:
-            st.markdown(
-                f"""
-                <div style="background-color:#d1e7dd;padding:10px;border-radius:5px;">
-                    <strong>CTI Beneficiarios PPP</strong><br>
-                    <span style="font-size:24px;">{df_cti_benficiario_ppp['CUIL'].nunique() if not df_cti_benficiario_ppp.empty and 'CUIL' in df_cti_benficiario_ppp.columns else 0}</span>
+            st.markdown(f"""
+                <div class="metric-card status-success" style="padding: 15px;">
+                    <div class="metric-label">CTI Beneficiarios PPP</div>
+                    <div class="metric-value" style="font-size: 22px;">{df_cti_benficiario_ppp['CUIL'].nunique() if not df_cti_benficiario_ppp.empty and 'CUIL' in df_cti_benficiario_ppp.columns else 0}</div>
                 </div>
-                """, 
-                unsafe_allow_html=True
-            )
+            """, unsafe_allow_html=True)
         
         # Gráfico de distribución por modalidad de contratación AFIP
         if not df_inscriptos_ppp.empty and 'ID_MOD_CONT_AFIP' in df_inscriptos_ppp.columns and 'MOD_CONT_AFIP' in df_inscriptos_ppp.columns:
-            st.markdown("#### Distribución por Modalidad de Contratación AFIP")
+            st.markdown('<h3 style="font-size: 18px; margin: 20px 0 15px 0;">Distribución por Modalidad de Contratación AFIP</h3>', unsafe_allow_html=True)
             
             # Filtrar valores nulos
             df_mod_afip = df_inscriptos_ppp.dropna(subset=['ID_MOD_CONT_AFIP', 'MOD_CONT_AFIP'])
@@ -761,6 +748,7 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
                 df_mod_afip_count = df_mod_afip.groupby(['MOD_CONT_AFIP']).size().reset_index(name='Cantidad')
                 
                 # Crear gráfico de torta
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
                 fig_mod_afip = px.pie(
                     df_mod_afip_count, 
                     values='Cantidad', 
@@ -769,16 +757,18 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
                     color_discrete_sequence=px.colors.qualitative.Pastel
                 )
                 st.plotly_chart(fig_mod_afip, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
         
         # Gráfico de distribución por departamento
         if not df_inscriptos_ppp.empty and 'N_DEPARTAMENTO' in df_inscriptos_ppp.columns:
-            st.markdown("#### Distribución por Departamento")
+            st.markdown('<h3 style="font-size: 18px; margin: 20px 0 15px 0;">Distribución por Departamento</h3>', unsafe_allow_html=True)
             
             # Agrupar por departamento y contar
             df_depto_count = df_inscriptos_ppp.groupby(['N_DEPARTAMENTO']).size().reset_index(name='Cantidad')
             df_depto_count = df_depto_count.sort_values('Cantidad', ascending=False)
             
             # Crear gráfico de barras
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             fig_depto = px.bar(
                 df_depto_count,
                 x='N_DEPARTAMENTO',
@@ -788,27 +778,31 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
                 color_continuous_scale='Blues'
             )
             st.plotly_chart(fig_depto, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         
         # Tabla de estados de ficha agrupados por estado de beneficiario
         if not df_inscriptos_ppp.empty and 'ID_EST_FIC' in df_inscriptos_ppp.columns and 'N_ESTADO_FICHA' in df_inscriptos_ppp.columns:
-            st.markdown("#### Estados de Ficha por Estado de Beneficiario")
+            st.markdown('<h3 style="font-size: 18px; margin: 20px 0 15px 0;">Estados de Ficha por Estado de Beneficiario</h3>', unsafe_allow_html=True)
             
             # Agrupar por estado de ficha y contar
             df_estado_ficha = df_inscriptos_ppp.groupby(['ID_EST_FIC', 'N_ESTADO_FICHA']).size().reset_index(name='Cantidad')
             df_estado_ficha = df_estado_ficha.sort_values(['ID_EST_FIC', 'Cantidad'], ascending=[True, False])
             
-            # Mostrar tabla
-            st.dataframe(df_estado_ficha, hide_index=True)
+            # Mostrar tabla con estilo mejorado
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.dataframe(df_estado_ficha, hide_index=True, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         
         # Mapa de calor si hay datos geográficos
         if not df_inscriptos_ppp.empty and 'N_DEPARTAMENTO' in df_inscriptos_ppp.columns and geojson_data is not None:
-            st.markdown("#### Mapa de Distribución Geográfica")
+            st.markdown('<h3 style="font-size: 18px; margin: 20px 0 15px 0;">Mapa de Distribución Geográfica</h3>', unsafe_allow_html=True)
             
             try:
                 # Agrupar por departamento y contar
                 df_mapa = df_inscriptos_ppp.groupby(['N_DEPARTAMENTO']).size().reset_index(name='Cantidad')
                 
                 # Crear mapa coroplético
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
                 fig_mapa = px.choropleth_mapbox(
                     df_mapa,
                     geojson=geojson_data,
@@ -824,9 +818,18 @@ def show_inscriptions(df_postulaciones_fup, df_inscripciones, df_inscriptos, df_
                 )
                 fig_mapa.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
                 st.plotly_chart(fig_mapa, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
             except Exception as e:
-                st.info(f"No se pudo generar el mapa: {str(e)}")
+                st.markdown(f"""
+                    <div class="info-box status-warning">
+                        <strong>Información:</strong> No se pudo generar el mapa: {str(e)}
+                    </div>
+                """, unsafe_allow_html=True)
     
     except Exception as e:
-        st.info(f"Se mostrarán los datos disponibles: {str(e)}")
+        st.markdown(f"""
+            <div class="info-box status-warning">
+                <strong>Información:</strong> Se mostrarán los datos disponibles: {str(e)}
+            </div>
+        """, unsafe_allow_html=True)
                 

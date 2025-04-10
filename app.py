@@ -43,7 +43,7 @@ with st.spinner("Cargando datos.."):
     # Mapeo de archivos por módulo
     modules = {
         'bco_gente': ['vt_nomina_rep_dpto_localidad.parquet', 'VT_NOMINA_REP_RECUPERO_X_ANIO.parquet', 
-                       'Detalle_recupero.csv', 'capa_departamentos_2010.geojson', 'departamentos_poblacion.csv'],
+                       'Detalle_recupero.csv', 'capa_departamentos_2010.geojson', 'LOCALIDAD CIRCUITO ELECTORAL GEO Y ELECTORES - USAR.txt'],
         'cba_capacita': ['ALUMNOS_X_LOCALIDAD.parquet', 'capa_departamentos_2010.geojson'],
         'empleo': ['postulaciones_fup.parquet', 'inscripciones.parquet', 'inscriptos.parquet', 
                    'poblacion.parquet', 'empresas.parquet', 'capa_departamentos_2010.geojson']
