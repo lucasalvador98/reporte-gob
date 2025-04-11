@@ -78,7 +78,7 @@ def mostrar_global(geojson_data, df_departamentos, df_global, df_recupero=None):
     estado_categorias = {
         "En Evaluación": [1, 2, 5],
         "Rechazados": [3, 6, 7, 15, 23],
-        "A Pagar": [4, 9, 10, 11, 12, 13, 19, 20]
+        "A Pagar": [4, 9, 10, 11, 12, 13, 19]
     }
 
     conteo_estados = (
