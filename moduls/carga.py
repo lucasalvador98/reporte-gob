@@ -4,6 +4,8 @@ import requests
 import streamlit as st
 import io
 import time
+import datetime
+import numpy as np
 
 def obtener_archivo_gitlab(repo_id, file_path, branch='main', token=None):
     """Obtiene un archivo de GitLab"""
@@ -83,6 +85,40 @@ def obtener_lista_archivos(repo_id, branch='main', token=None):
     
     return []
 
+def convert_numpy_types(df):
+    """
+    Convierte tipos de datos numpy a tipos Python nativos en un DataFrame.
+    Esto ayuda a evitar errores como 'Python value of type numpy.int64 not supported'.
+    
+    Args:
+        df: DataFrame a convertir
+        
+    Returns:
+        DataFrame con tipos de datos Python nativos
+    """
+    if df is None or df.empty:
+        return df
+        
+    # Función para convertir valores numpy a Python nativos
+    def convert_value(val):
+        if isinstance(val, np.integer):
+            return int(val)
+        elif isinstance(val, np.floating):
+            return float(val)
+        elif isinstance(val, np.ndarray):
+            return val.tolist()
+        elif isinstance(val, np.bool_):
+            return bool(val)
+        else:
+            return val
+    
+    # Aplicar la conversión a todo el DataFrame
+    for col in df.columns:
+        if df[col].dtype.kind in 'iufc':  # integers, unsigned integers, floats, complex
+            df[col] = df[col].apply(convert_value)
+    
+    return df
+
 def load_data_from_gitlab(repo_id, branch='main', token=None):
     """Carga todos los archivos del repositorio"""
     try:
@@ -93,7 +129,7 @@ def load_data_from_gitlab(repo_id, branch='main', token=None):
             return {}, {}
         
         # Filtrar por extensiones soportadas
-        extensiones = ['.parquet', '.csv', '.geojson', '.txt']  # Added .txt extension
+        extensiones = ['.parquet', '.csv', '.geojson', '.txt']  
         archivos_filtrados = [a for a in archivos if any(a.endswith(ext) for ext in extensiones)]
         
         # Diccionarios para datos y fechas
@@ -120,7 +156,44 @@ def load_data_from_gitlab(repo_id, branch='main', token=None):
                 
                 # Cargar según extensión
                 if archivo.endswith('.parquet'):
-                    df = pd.read_parquet(io.BytesIO(contenido))
+                    try:
+                        # Usar pyarrow directamente para todos los archivos Parquet
+                        # para evitar problemas de conversión de timestamp
+                        import pyarrow.parquet as pq
+                        table = pq.read_table(io.BytesIO(contenido))
+                        # Convertir a pandas con opción para ignorar conversión de timestamp
+                        df = table.to_pandas(timestamp_as_object=True)
+                        
+                        # Convertir columnas de tipo object que contienen fechas a datetime
+                        # pero solo si están dentro del rango válido de pandas
+                        for col in df.columns:
+                            # Verificar si la columna parece contener fechas
+                            if df[col].dtype == 'object' and df[col].notna().any():
+                                sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
+                                if isinstance(sample, (datetime.datetime, datetime.date)):
+                                    try:
+                                        # Intentar convertir solo si todas las fechas están en rango válido
+                                        min_valid_date = pd.Timestamp.min.to_pydatetime()
+                                        max_valid_date = pd.Timestamp.max.to_pydatetime()
+                                        
+                                        # Solo convertir si todas las fechas están en rango
+                                        if df[col].dropna().apply(lambda x: isinstance(x, (datetime.datetime, datetime.date)) and 
+                                                                min_valid_date <= pd.Timestamp(x) <= max_valid_date).all():
+                                            df[col] = pd.to_datetime(df[col])
+                                    except:
+                                        # Si hay error, dejar como object
+                                        pass
+                        
+                        # Convertir tipos numpy a tipos Python nativos
+                        df = convert_numpy_types(df)
+                    except Exception as e:
+                        st.warning(f"Error al procesar {nombre} con PyArrow: {str(e)}")
+                        # Intentar con pandas directamente como último recurso
+                        try:
+                            df = pd.read_parquet(io.BytesIO(contenido))
+                        except Exception as e2:
+                            st.error(f"No se pudo cargar {nombre} después de múltiples intentos: {str(e2)}")
+                            continue
                 elif archivo.endswith('.csv'):
                     df = pd.read_csv(io.BytesIO(contenido))
                 elif archivo.endswith('.geojson'):
@@ -130,6 +203,9 @@ def load_data_from_gitlab(repo_id, branch='main', token=None):
                     df = pd.read_csv(io.BytesIO(contenido), sep='\t', encoding='utf-8')
                 else:
                     continue
+                
+                # Convertir tipos numpy a tipos Python nativos
+                df = convert_numpy_types(df)
                 
                 # Guardar en diccionarios - check if df is not empty
                 if df is not None and not df.empty:
