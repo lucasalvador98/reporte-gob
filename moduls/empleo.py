@@ -363,7 +363,6 @@ def show_companies(df_empresas, geojson_data):
     # Métricas y tabla final con mejor diseño
     empresas_adh = df_display['CUIT'].nunique()
     
-    # Improved metric display
     st.markdown("""
         <div class="metric-card">
             <div class="metric-label">Empresas Adheridas</div>
