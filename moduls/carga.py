@@ -8,6 +8,8 @@ import datetime
 import numpy as np
 import subprocess
 import sys
+import os
+import glob
 
 def obtener_archivo_gitlab(repo_id, file_path, branch='main', token=None):
     """Obtiene un archivo de GitLab"""
@@ -121,116 +123,244 @@ def convert_numpy_types(df):
 
     return df
 
-def load_data_from_gitlab(repo_id, branch='main', token=None):
-    """Carga todos los archivos del repositorio"""
+def safe_read_parquet(file_path_or_buffer, is_buffer=False):
+    """
+    Lee un archivo parquet de manera segura, manejando diferentes errores comunes.
+    
+    Args:
+        file_path_or_buffer: Ruta al archivo o buffer de bytes
+        is_buffer: Si es True, file_path_or_buffer es un buffer de bytes
+        
+    Returns:
+        Tupla (DataFrame de pandas, mensaje de error). Si no hay error, el mensaje es None.
+    """
     try:
-        # Obtener lista de archivos
-        archivos = obtener_lista_archivos(repo_id, branch, token)
+        # Intentar primero con pyarrow si está disponible
+        try:
+            import pyarrow.parquet as pq
+            import pyarrow as pa
+            
+            if is_buffer:
+                table = pq.read_table(file_path_or_buffer)
+            else:
+                table = pq.read_table(file_path_or_buffer)
+            
+            # Convertir a pandas con manejo de errores para timestamps
+            try:
+                df = table.to_pandas()
+            except pa.ArrowInvalid as e:
+                if "out of bounds timestamp" in str(e):
+                    # Si hay error de timestamp fuera de rango, usar opción para ignorar conversión
+                    df = table.to_pandas(timestamp_as_object=True)
+                else:
+                    raise
+        except (ImportError, Exception) as e:
+            # Si pyarrow no está disponible o falla, intentar con pandas directamente
+            try:
+                # Intentar con timestamp_as_object
+                if is_buffer:
+                    df = pd.read_parquet(file_path_or_buffer, timestamp_as_object=True)
+                else:
+                    df = pd.read_parquet(file_path_or_buffer, timestamp_as_object=True)
+            except TypeError:
+                # Si falla por el parámetro timestamp_as_object, intentar sin él
+                if is_buffer:
+                    df = pd.read_parquet(file_path_or_buffer)
+                else:
+                    df = pd.read_parquet(file_path_or_buffer)
+            except Exception as e:
+                if "out of bounds timestamp" in str(e):
+                    # Para errores de timestamp fuera de rango en pandas, usar opción engine='python'
+                    if is_buffer:
+                        df = pd.read_parquet(file_path_or_buffer, engine='python')
+                    else:
+                        df = pd.read_parquet(file_path_or_buffer, engine='python')
+                else:
+                    raise
+        
+        # Procesar columnas de fecha para manejar casos extremos
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                # Convertir fechas extremas a objetos datetime de Python
+                try:
+                    df[col] = pd.to_datetime(df[col], errors='coerce')
+                except:
+                    # Si falla, convertir a strings
+                    df[col] = df[col].astype(str)
+        
+        return df, None  # Devolver el DataFrame y None como mensaje de error
+    except Exception as e:
+        return None, str(e)  # Devolver None como DataFrame y el mensaje de error
 
-        if not archivos:
-            return {}, {}
-
-        # Filtrar por extensiones soportadas
-        extensiones = ['.parquet', '.csv', '.geojson', '.txt']
-        archivos_filtrados = [a for a in archivos if any(a.endswith(ext) for ext in extensiones)]
-
+def load_data_from_gitlab(repo_id, branch='main', token=None, use_local=False, local_path=None):
+    """
+    Carga todos los archivos del repositorio o desde una carpeta local
+    
+    Args:
+        repo_id: ID del repositorio en GitLab
+        branch: Rama del repositorio
+        token: Token de GitLab
+        use_local: Si es True, carga desde la carpeta local en vez de GitLab
+        local_path: Ruta a la carpeta local con los archivos (solo si use_local=True)
+    """
+    try:
         # Diccionarios para datos y fechas
         all_data = {}
         all_dates = {}
-
-        # Barra de progreso
-        progress = st.progress(0)
-        total = len(archivos_filtrados)
-
-        # Cargar cada archivo
-        for i, archivo in enumerate(archivos_filtrados):
-            try:
-                # Actualizar progreso
-                progress.progress((i + 1) / total)
-
-                # Obtener contenido
-                contenido = obtener_archivo_gitlab(repo_id, archivo, branch, token)
-                if contenido is None:
-                    continue
-
-                # Extraer nombre de archivo
-                nombre = archivo.split('/')[-1]
-
-                # Cargar según extensión
-                if archivo.endswith('.parquet'):
-                    try:
-                        # Usar pyarrow directamente para todos los archivos Parquet
-                        # para evitar problemas de conversión de timestamp
-                        try:
-                            import pyarrow.parquet as pq
-                        except ImportError:
-                            # Install pyarrow if not present
-                            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyarrow"])
-                            import pyarrow.parquet as pq
-                            
-                        table = pq.read_table(io.BytesIO(contenido))
-                        # Convertir a pandas con opción para ignorar conversión de timestamp
-                        df = table.to_pandas(timestamp_as_object=True)
-
-                        # Ajustar la precisión de las marcas de tiempo a microsegundos
-                        for col in df.columns:
-                            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                                df[col] = df[col].dt.round('us')
-
-                        # Simplificación del manejo de fechas
-                        for col in df.columns:
-                            # Verificar si la columna parece contener fechas
-                            if df[col].dtype == 'object' and df[col].notna().any():
-                                sample = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
-                                if isinstance(sample, (datetime.datetime, datetime.date)):
-                                    try:
-                                        # Enfoque simplificado: usar pd.to_datetime con errores='coerce'
-                                        # Esto convertirá fechas inválidas a NaT en lugar de generar errores
-                                        df[col] = pd.to_datetime(df[col], errors='coerce')
-                                    except:
-                                        # Si hay algún otro error, dejar como object
-                                        pass
-
-
-                        # Convertir tipos numpy a tipos Python nativos
-                        df = convert_numpy_types(df)
-                    except Exception as e:
-                        st.warning(f"Error al procesar {nombre} con PyArrow: {str(e)}")
-                        # Intentar con pandas directamente como último recurso
-                        try:
-                            df = pd.read_parquet(io.BytesIO(contenido))
-                        except Exception as e2:
-                            st.error(f"No se pudo cargar {nombre} después de múltiples intentos: {str(e2)}")
-                            continue
-                elif archivo.endswith('.csv'):
-                    df = pd.read_csv(io.BytesIO(contenido))
-                elif archivo.endswith('.geojson'):
-                    df = gpd.read_file(io.BytesIO(contenido))
-                elif archivo.endswith('.txt'):
-                    # Handle text files properly
-                    df = pd.read_csv(io.BytesIO(contenido), sep='\t', encoding='utf-8')
-                else:
-                    continue
-
-                # Convertir tipos numpy a tipos Python nativos
-                df = convert_numpy_types(df)
-
-                # Guardar en diccionarios - check if df is not empty
-                if df is not None and not df.empty:
-                    all_data[nombre] = df
-                    all_dates[nombre] = time.strftime("%Y-%m-%d")
-                else:
-                    st.warning(f"Archivo vacío: {nombre}")
-
-            except Exception as e:
-                st.warning(f"Error al procesar {archivo}: {str(e)}")
-                continue
-
-        # Limpiar barra de progreso
-        progress.empty()
         
-        return all_data, all_dates
-
+        # Determinar si usar la carpeta local o GitLab
+        if use_local and local_path and os.path.exists(local_path):
+            st.info(f"Cargando datos desde carpeta local: {local_path}")
+            
+            # Buscar archivos con extensiones soportadas en la carpeta local
+            extensiones = ['.parquet', '.csv', '.geojson', '.txt']
+            archivos_filtrados = []
+            
+            for ext in extensiones:
+                # Buscar archivos con la extensión actual en la carpeta y subcarpetas
+                archivos_ext = glob.glob(os.path.join(local_path, f"**/*{ext}"), recursive=True)
+                archivos_filtrados.extend(archivos_ext)
+            
+            # Barra de progreso
+            progress = st.progress(0)
+            total = len(archivos_filtrados)
+            
+            # Cargar cada archivo
+            for i, archivo_path in enumerate(archivos_filtrados):
+                try:
+                    # Actualizar progreso
+                    progress.progress((i + 1) / total)
+                    
+                    # Extraer nombre de archivo relativo a la carpeta base
+                    nombre = os.path.basename(archivo_path)
+                    
+                    # Cargar según extensión
+                    if archivo_path.endswith('.parquet'):
+                        try:
+                            df, error = safe_read_parquet(archivo_path)
+                            if df is not None:
+                                # Convertir tipos numpy
+                                df = convert_numpy_types(df)
+                                all_data[nombre] = df
+                                all_dates[nombre] = datetime.datetime.fromtimestamp(os.path.getmtime(archivo_path))
+                            else:
+                                st.warning(f"Error al cargar {nombre}: {error}")
+                        except Exception as e:
+                            st.warning(f"Error al cargar {nombre}: {str(e)}")
+                    
+                    elif archivo_path.endswith('.csv'):
+                        try:
+                            df = pd.read_csv(archivo_path)
+                            # Convertir tipos numpy
+                            df = convert_numpy_types(df)
+                            all_data[nombre] = df
+                            all_dates[nombre] = datetime.datetime.fromtimestamp(os.path.getmtime(archivo_path))
+                        except Exception as e:
+                            st.warning(f"Error al cargar {nombre}: {str(e)}")
+                    
+                    elif archivo_path.endswith('.geojson'):
+                        try:
+                            gdf = gpd.read_file(archivo_path)
+                            all_data[nombre] = gdf
+                            all_dates[nombre] = datetime.datetime.fromtimestamp(os.path.getmtime(archivo_path))
+                        except Exception as e:
+                            st.warning(f"Error al cargar {nombre}: {str(e)}")
+                    
+                    elif archivo_path.endswith('.txt'):
+                        try:
+                            with open(archivo_path, 'r', encoding='utf-8') as f:
+                                contenido = f.read()
+                            all_data[nombre] = contenido
+                            all_dates[nombre] = datetime.datetime.fromtimestamp(os.path.getmtime(archivo_path))
+                        except Exception as e:
+                            st.warning(f"Error al cargar {nombre}: {str(e)}")
+                
+                except Exception as e:
+                    st.error(f"Error al procesar {archivo_path}: {str(e)}")
+            
+            # Ocultar la barra de progreso
+            progress.empty()
+            
+            return all_data, all_dates
+        
+        else:
+            # Cargar desde GitLab (código existente)
+            # Obtener lista de archivos
+            archivos = obtener_lista_archivos(repo_id, branch, token)
+            
+            if not archivos:
+                return {}, {}
+            
+            # Filtrar por extensiones soportadas
+            extensiones = ['.parquet', '.csv', '.geojson', '.txt']
+            archivos_filtrados = [a for a in archivos if any(a.endswith(ext) for ext in extensiones)]
+            
+            # Barra de progreso
+            progress = st.progress(0)
+            total = len(archivos_filtrados)
+            
+            # Cargar cada archivo
+            for i, archivo in enumerate(archivos_filtrados):
+                try:
+                    # Actualizar progreso
+                    progress.progress((i + 1) / total)
+                    
+                    # Obtener contenido
+                    contenido = obtener_archivo_gitlab(repo_id, archivo, branch, token)
+                    if contenido is None:
+                        continue
+                    
+                    # Extraer nombre de archivo
+                    nombre = archivo.split('/')[-1]
+                    
+                    # Cargar según extensión
+                    if archivo.endswith('.parquet'):
+                        try:
+                            df, error = safe_read_parquet(io.BytesIO(contenido), is_buffer=True)
+                            if df is not None:
+                                # Convertir tipos numpy
+                                df = convert_numpy_types(df)
+                                all_data[nombre] = df
+                                all_dates[nombre] = datetime.datetime.now()
+                            else:
+                                st.warning(f"Error al cargar {nombre}: {error}")
+                        except Exception as e:
+                            st.warning(f"Error al cargar {nombre}: {str(e)}")
+                    
+                    elif archivo.endswith('.csv'):
+                        try:
+                            df = pd.read_csv(io.BytesIO(contenido))
+                            # Convertir tipos numpy
+                            df = convert_numpy_types(df)
+                            all_data[nombre] = df
+                            all_dates[nombre] = datetime.datetime.now()
+                        except Exception as e:
+                            st.warning(f"Error al cargar {nombre}: {str(e)}")
+                    
+                    elif archivo.endswith('.geojson'):
+                        try:
+                            gdf = gpd.read_file(io.BytesIO(contenido))
+                            all_data[nombre] = gdf
+                            all_dates[nombre] = datetime.datetime.now()
+                        except Exception as e:
+                            st.warning(f"Error al cargar {nombre}: {str(e)}")
+                    
+                    elif archivo.endswith('.txt'):
+                        try:
+                            contenido_str = contenido.decode('utf-8')
+                            all_data[nombre] = contenido_str
+                            all_dates[nombre] = datetime.datetime.now()
+                        except Exception as e:
+                            st.warning(f"Error al cargar {nombre}: {str(e)}")
+                
+                except Exception as e:
+                    st.error(f"Error al procesar {archivo}: {str(e)}")
+            
+            # Ocultar la barra de progreso
+            progress.empty()
+            
+            return all_data, all_dates
+    
     except Exception as e:
-        st.error(f"Error general: {str(e)}")
+        st.error(f"Error al cargar datos: {str(e)}")
         return {}, {}

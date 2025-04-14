@@ -1,13 +1,30 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import altair as alt
-import math
-import requests
-import io
 import json
 from datetime import datetime, timedelta
+from utils.ui_components import display_kpi_row
+from utils.map_utils import is_mapping_available, create_choropleth_map, display_map
+
+# Importación condicional para Altair
+try:
+    import altair as alt
+    ALTAIR_AVAILABLE = True
+except ImportError:
+    ALTAIR_AVAILABLE = False
+    st.warning("Algunas visualizaciones de gráficos no estarán disponibles. Para habilitar todas las funciones, instale el paquete: altair")
+
+# Importaciones condicionales para manejar posibles errores
+try:
+    import folium
+    from streamlit_folium import folium_static
+    import geopandas as gpd
+    MAPPING_AVAILABLE = True
+except ImportError:
+    MAPPING_AVAILABLE = False
+    st.warning("Algunas funcionalidades de mapas no estarán disponibles. Para habilitar todas las funciones, instale los paquetes: folium, streamlit-folium y geopandas")
 
 def enviar_a_slack(mensaje, valoracion):
     """
@@ -80,124 +97,7 @@ def show_empleo_dashboard(data, dates):
         data: Diccionario de dataframes cargados desde GitLab
         dates: Diccionario de fechas de actualización de los archivos
     """
-    # Apply custom styles for better appearance
-    st.markdown("""
-        <style>
-        /* Variables de colores de la identidad visual */
-        :root {
-            --color-primary: #0085c8;
-            --color-secondary: #00a8e6;
-            --color-accent-1: #e73446;
-            --color-accent-2: #fbbb21;
-            --color-accent-3: #bccf00;
-            --color-accent-4: #8a1e82;
-            --color-accent-5: #ee7326;
-        }
-        
-        /* General styles */
-        .main {
-            background-color: #f8f9fa;
-            padding: 1rem;
-        }
-        
-        /* Header styles */
-        .dashboard-header {
-            background-color: var(--color-primary);
-            color: white;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        
-        /* Filter container */
-        .filter-container {
-            background-color: #f0f2f6;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            border-left: 4px solid var(--color-secondary);
-        }
-        
-        /* Card styles */
-        .metric-card {
-            background-color: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            padding: 20px;
-            margin-bottom: 15px;
-            transition: transform 0.3s ease;
-            border-top: 4px solid var(--color-primary);
-        }
-        
-        .metric-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-        }
-        
-        .metric-value {
-            font-size: 28px;
-            font-weight: bold;
-            color: var(--color-primary);
-        }
-        
-        .metric-label {
-            font-size: 14px;
-            color: #6c757d;
-            margin-bottom: 5px;
-        }
-        
-        /* Table styles */
-        .styled-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 25px 0;
-            font-size: 0.9em;
-            font-family: sans-serif;
-            min-width: 400px;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        
-        .styled-table thead tr {
-            background-color: var(--color-primary);
-            color: #ffffff;
-            text-align: left;
-        }
-        
-        .styled-table th,
-        .styled-table td {
-            padding: 12px 15px;
-        }
-        
-        .styled-table tbody tr {
-            border-bottom: 1px solid #dddddd;
-        }
-        
-        .styled-table tbody tr:nth-of-type(even) {
-            background-color: #f3f3f3;
-        }
-        
-        .styled-table tbody tr:last-of-type {
-            border-bottom: 2px solid var(--color-primary);
-        }
-        
-        /* Status indicators */
-        .status-success {background-color: #d1e7dd; border-left: 5px solid var(--color-accent-3);}
-        .status-info {background-color: #d0e3f1; border-left: 5px solid var(--color-primary);}
-        .status-warning {background-color: #fff3cd; border-left: 5px solid var(--color-accent-2);}
-        .status-danger {background-color: #f8d7da; border-left: 5px solid var(--color-accent-1);}
-        
-        /* Section headers */
-        h3 {
-            color: var(--color-primary);
-            border-bottom: 2px solid var(--color-secondary);
-            padding-bottom: 5px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    # Los estilos ahora se cargan desde app.py
     
     if not data:
         st.info("No se pudieron cargar los datos de PROGRAMAS DE EMPLEO.")
@@ -306,40 +206,33 @@ def show_empleo_dashboard(data, dates):
                                           (df['ZONA'] == 'ZONA FAVORECIDA')].shape[0]
         
         # Mostrar KPIs en la parte superior
-        st.markdown('<div style="padding: 10px 0 20px 0;">', unsafe_allow_html=True)
-        kpi_cols = st.columns(4)
+        st.markdown('<div class="kpi-container">', unsafe_allow_html=True)
         
-        with kpi_cols[0]:
-            st.markdown(f"""
-                <div style="background-color: var(--color-primary); color: white; padding: 15px; border-radius: 10px; text-align: center;">
-                    <div style="font-size: 14px; margin-bottom: 5px;">BENEFICIARIOS</div>
-                    <div style="font-size: 28px; font-weight: bold;">{total_beneficiarios:,}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-        with kpi_cols[1]:
-            st.markdown(f"""
-                <div style="background-color: var(--color-secondary); color: white; padding: 15px; border-radius: 10px; text-align: center;">
-                    <div style="font-size: 14px; margin-bottom: 5px;">BENEFICIARIOS CTI</div>
-                    <div style="font-size: 28px; font-weight: bold;">{total_beneficiarios_cti:,}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-        with kpi_cols[2]:
-            st.markdown(f"""
-                <div style="background-color: var(--color-accent-3); color: white; padding: 15px; border-radius: 10px; text-align: center;">
-                    <div style="font-size: 14px; margin-bottom: 5px;">TOTAL BENEFICIARIOS</div>
-                    <div style="font-size: 28px; font-weight: bold;">{total_general:,}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-        with kpi_cols[3]:
-            st.markdown(f"""
-                <div style="background-color: var(--color-accent-4); color: white; padding: 15px; border-radius: 10px; text-align: center;">
-                    <div style="font-size: 14px; margin-bottom: 5px;">ZONA FAVORECIDA</div>
-                    <div style="font-size: 28px; font-weight: bold;">{beneficiarios_zona_favorecida:,}</div>
-                </div>
-            """, unsafe_allow_html=True)
+        # Usar la función auxiliar para mostrar KPIs
+        kpi_data = [
+            {
+                "title": "BENEFICIARIOS",
+                "value": total_beneficiarios,
+                "color_class": "kpi-primary"
+            },
+            {
+                "title": "BENEFICIARIOS CTI",
+                "value": total_beneficiarios_cti,
+                "color_class": "kpi-secondary"
+            },
+            {
+                "title": "TOTAL BENEFICIARIOS",
+                "value": total_general,
+                "color_class": "kpi-accent-3"
+            },
+            {
+                "title": "ZONA FAVORECIDA",
+                "value": beneficiarios_zona_favorecida,
+                "color_class": "kpi-accent-4"
+            }
+        ]
+        
+        display_kpi_row(kpi_data, num_columns=4)
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Crear pestañas para organizar el contenido
@@ -402,67 +295,254 @@ def show_empleo_dashboard(data, dates):
                     </div>
                 """, unsafe_allow_html=True)
             
-            # Crear tabla de conteo por ETAPA y ESTADO_FICHA
-            if not df_filtered.empty:
-                # Conteo de ID_FICHA por PROGRAMA y ESTADO_FICHA
-                pivot_table = df_filtered.pivot_table(
-                    index='PROGRAMA',
+            # Conteo de ID_FICHA por PROGRAMA y ESTADO_FICHA
+            pivot_table = df_filtered.pivot_table(
+                index='PROGRAMA',
+                columns='N_ESTADO_FICHA',
+                values='ID_FICHA',
+                aggfunc='count',
+                fill_value=0
+            )
+            
+            # Definir el orden de las columnas por grupos
+            grupo1 = ["POSTULANTE APTO", "INSCRIPTO", "BENEFICIARIO"]
+            grupo2 = ["INSCRIPTO - CTI", "RETENIDO - CTI", "VALIDADO - CTI", "BENEFICIARIO- CTI", "EX BENEFICARIO", "BAJA - CTI"]
+            grupo3 = ["POSTULANTE SIN EMPRESA", "FUERA CUPO DE EMPRESA", "RECHAZO FORMAL", "INSCRIPTO NO ACEPTADO", "DUPLICADO", "EMPRESA NO APTA"]
+            
+            # Crear una lista con todas las columnas en el orden deseado
+            columnas_ordenadas = grupo1 + grupo2 + grupo3
+            
+            # Añadir totales primero para cálculos internos, pero no los mostraremos
+            pivot_table['Total'] = pivot_table.sum(axis=1)
+            pivot_table.loc['Total'] = pivot_table.sum()
+            
+            # Reordenar con las columnas existentes más cualquier otra columna y el total al final (para cálculos)
+            pivot_table = pivot_table.reindex(columns=columnas_ordenadas + [col for col in pivot_table.columns if col not in columnas_ordenadas and col != 'Total'] + ['Total'])
+            
+            # Mostrar tabla con estilo mejorado
+            st.markdown('<div class="section-title">Conteo de Fichas por Programa y Estado</div>', unsafe_allow_html=True)
+            
+            # Convertir pivot table a DataFrame para mejor visualización
+            pivot_df = pivot_table.reset_index()
+            
+            # Separar las columnas por grupos
+            grupo1_cols = [col for col in grupo1 if col in pivot_table.columns]
+            grupo2_cols = [col for col in grupo2 if col in pivot_table.columns]
+            grupo3_cols = [col for col in grupo3 if col in pivot_table.columns]
+            otros_cols = [col for col in pivot_table.columns if col not in grupo1 and col not in grupo2 and col not in grupo3 and col != 'Total' and col != 'PROGRAMA']
+            
+            # Crear HTML personalizado para mostrar la tabla principal (grupos 1 y 2)
+            html_table_main = """
+            <div style="overflow-x: auto; margin-bottom: 20px;">
+                <table class="styled-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2">PROGRAMA</th>
+                            <th colspan="{}" style="background-color: var(--color-primary); border-right: 2px solid white;">Grupo 1</th>
+                            <th colspan="{}" style="background-color: var(--color-secondary); border-right: 2px solid white;">Grupo 2</th>
+                        </tr>
+                        <tr>
+            """.format(
+                len(grupo1_cols),
+                len(grupo2_cols)
+            )
+            
+            # Agregar las cabeceras de columnas para la tabla principal
+            for col in grupo1_cols + grupo2_cols:
+                # Determinar el estilo según el grupo
+                if col == "BENEFICIARIO":
+                    style = 'style="background-color: #0066a0; color: white;"'  # Versión más oscura del color primario
+                elif col == "BENEFICIARIO- CTI":
+                    style = 'style="background-color: #0080b3; color: white;"'  # Versión más oscura del color secundario
+                elif col in grupo1:
+                    style = 'style="background-color: var(--color-primary);"'
+                elif col in grupo2:
+                    style = 'style="background-color: var(--color-secondary);"'
+                else:
+                    style = 'style="background-color: var(--color-accent-2);"'
+                
+                html_table_main += f'<th {style}>{col}</th>'
+            
+            html_table_main += """
+                        </tr>
+                    </thead>
+                    <tbody>
+            """
+            
+            # Agregar filas de datos para la tabla principal
+            for index, row in pivot_df.iterrows():
+                html_table_main += '<tr>'
+                
+                # Columna PROGRAMA
+                if row['PROGRAMA'] == 'Total':
+                    html_table_main += f'<td style="font-weight: bold; background-color: #f2f2f2;">{row["PROGRAMA"]}</td>'
+                else:
+                    html_table_main += f'<td>{row["PROGRAMA"]}</td>'
+                
+                # Columnas de datos para grupos 1 y 2
+                for col in grupo1_cols + grupo2_cols:
+                    if row['PROGRAMA'] == 'Total':
+                        # Destacar también las celdas de totales para BENEFICIARIO y BENEFICIARIO- CTI
+                        if col == "BENEFICIARIO":
+                            cell_style = 'style="font-weight: bold; background-color: #e6f0f7; text-align: right;"'
+                        elif col == "BENEFICIARIO- CTI":
+                            cell_style = 'style="font-weight: bold; background-color: #e6f0f7; text-align: right;"'
+                        else:
+                            cell_style = 'style="font-weight: bold; background-color: #f2f2f2; text-align: right;"'
+                    else:
+                        # Destacar las celdas de datos para BENEFICIARIO y BENEFICIARIO- CTI
+                        if col == "BENEFICIARIO":
+                            cell_style = 'style="background-color: #e6f0f7; text-align: right;"'
+                        elif col == "BENEFICIARIO- CTI":
+                            cell_style = 'style="background-color: #e6f0f7; text-align: right;"'
+                        else:
+                            cell_style = 'style="text-align: right;"'
+                    
+                    html_table_main += f'<td {cell_style}>{int(row[col])}</td>'
+                
+                html_table_main += '</tr>'
+            
+            html_table_main += """
+                    </tbody>
+                </table>
+            </div>
+            """
+            
+            # Mostrar la tabla principal
+            st.markdown(html_table_main, unsafe_allow_html=True)
+            
+            # Crear un botón desplegable para mostrar la tabla del grupo 3 y otros
+            if grupo3_cols or otros_cols:  # Solo mostrar si hay columnas del grupo 3 u otros
+                with st.expander("Ver casos especiales (Grupo 3) y otros estados"):
+                    # Crear HTML para la tabla del grupo 3 y otros
+                    html_table_grupo3 = """
+                    <div style="overflow-x: auto; margin-bottom: 20px;">
+                        <table class="styled-table">
+                            <thead>
+                                <tr>
+                                    <th>PROGRAMA</th>
+                    """
+                    
+                    # Agregar cabeceras para el grupo 3
+                    for col in grupo3_cols:
+                        if col == "BENEFICIARIO":
+                            style = 'style="background-color: #0066a0; color: white;"'  # Versión más oscura del color primario
+                        elif col == "BENEFICIARIO- CTI":
+                            style = 'style="background-color: #0080b3; color: white;"'  # Versión más oscura del color secundario
+                        else:
+                            style = 'style="background-color: var(--color-accent-3);"'
+                        html_table_grupo3 += f'<th {style}>{col}</th>'
+                    
+                    # Agregar cabeceras para otros
+                    if otros_cols:
+                        # Crear un título para la sección "Otros" que incluya los nombres de los estados
+                        otros_nombres = ", ".join(otros_cols)
+                        html_table_grupo3 += f'<th colspan="{len(otros_cols)}" style="background-color: var(--color-accent-2);">Otros (Estados: {otros_nombres})</th>'
+                    
+                    # Si hay columnas en "otros", agregar una segunda fila para los nombres específicos
+                    if otros_cols:
+                        html_table_grupo3 += """
+                                </tr>
+                                <tr>
+                                    <th></th>
+                        """
+                        # Agregar los nombres de cada estado en "otros"
+                        for _ in grupo3_cols:
+                            html_table_grupo3 += "<th></th>"  # Celdas vacías para alinear con grupo3
+                        
+                        for col in otros_cols:
+                            if col == "BENEFICIARIO":
+                                style = 'style="background-color: #0066a0; color: white;"'  # Versión más oscura del color primario
+                            elif col == "BENEFICIARIO- CTI":
+                                style = 'style="background-color: #0080b3; color: white;"'  # Versión más oscura del color secundario
+                            else:
+                                style = 'style="background-color: var(--color-accent-2);"'
+                            html_table_grupo3 += f'<th {style}>{col}</th>'
+                    
+                    html_table_grupo3 += """
+                                </tr>
+                            </thead>
+                            <tbody>
+                    """
+                    
+                    # Agregar filas de datos para la tabla del grupo 3 y otros
+                    for index, row in pivot_df.iterrows():
+                        if row['PROGRAMA'] != 'Total':
+                            html_table_grupo3 += '<tr>'
+                            
+                            # Columna PROGRAMA
+                            html_table_grupo3 += f'<td>{row["PROGRAMA"]}</td>'
+                            
+                            # Columnas de datos para el grupo 3
+                            for col in grupo3_cols:
+                                # Destacar las celdas de datos para BENEFICIARIO y BENEFICIARIO- CTI
+                                if col == "BENEFICIARIO":
+                                    cell_style = 'style="background-color: #e6f0f7; text-align: right;"'
+                                elif col == "BENEFICIARIO- CTI":
+                                    cell_style = 'style="background-color: #e6f0f7; text-align: right;"'
+                                else:
+                                    cell_style = 'style="text-align: right;"'
+                                html_table_grupo3 += f'<td {cell_style}>{int(row[col])}</td>'
+                            
+                            # Columnas de datos para otros
+                            for col in otros_cols:
+                                # Destacar las celdas de datos para BENEFICIARIO y BENEFICIARIO- CTI
+                                if col == "BENEFICIARIO":
+                                    cell_style = 'style="background-color: #e6f0f7; text-align: right;"'
+                                elif col == "BENEFICIARIO- CTI":
+                                    cell_style = 'style="background-color: #e6f0f7; text-align: right;"'
+                                else:
+                                    cell_style = 'style="text-align: right;"'
+                                html_table_grupo3 += f'<td {cell_style}>{int(row[col])}</td>'
+                            
+                            html_table_grupo3 += '</tr>'
+                    
+                    html_table_grupo3 += """
+                            </tbody>
+                        </table>
+                    </div>
+                    """
+                    
+                    # Mostrar la tabla del grupo 3 y otros
+                    st.markdown(html_table_grupo3, unsafe_allow_html=True)
+            
+            # Mostrar tabla de beneficiarios por localidad
+            st.markdown('<h3 style="font-size: 20px; margin: 20px 0 15px 0;">Beneficiarios por Localidad</h3>', unsafe_allow_html=True)
+            
+            # Filtrar solo beneficiarios del DataFrame ya filtrado por departamento/localidad
+            beneficiarios_estados = ["BENEFICIARIO", "BENEFICIARIO- CTI"]
+            df_beneficiarios = df_filtered[df_filtered['N_ESTADO_FICHA'].isin(beneficiarios_estados)]
+            
+            if df_beneficiarios.empty:
+                st.warning("No hay beneficiarios con los filtros seleccionados.")
+            else:
+                # Crear pivot table para mostrar cada estado en una columna separada
+                df_pivot = df_beneficiarios.pivot_table(
+                    index=['N_DEPARTAMENTO', 'N_LOCALIDAD'],
                     columns='N_ESTADO_FICHA',
                     values='ID_FICHA',
                     aggfunc='count',
                     fill_value=0
+                ).reset_index()
+                
+                # Renombrar columnas para mejor visualización
+                if 'BENEFICIARIO' not in df_pivot.columns:
+                    df_pivot['BENEFICIARIO'] = 0
+                if 'BENEFICIARIO- CTI' not in df_pivot.columns:
+                    df_pivot['BENEFICIARIO- CTI'] = 0
+                
+                # Añadir columna de total
+                df_pivot['TOTAL'] = df_pivot['BENEFICIARIO'] + df_pivot['BENEFICIARIO- CTI']
+                
+                # Ordenar por departamento y total (descendente)
+                df_pivot_sorted = df_pivot.sort_values(['N_DEPARTAMENTO', 'TOTAL'], ascending=[True, False])
+                
+                # Mostrar tabla con estilo mejorado y sin índice
+                st.dataframe(
+                    df_pivot_sorted,
+                    use_container_width=True,
+                    hide_index=True
                 )
-                
-                # Añadir totales
-                pivot_table['Total'] = pivot_table.sum(axis=1)
-                pivot_table.loc['Total'] = pivot_table.sum()
-                
-                # Mostrar tabla con estilo mejorado
-                st.markdown('<h3 style="font-size: 20px; margin: 20px 0 15px 0;">Conteo de Fichas por Programa y Estado</h3>', unsafe_allow_html=True)
-                
-                # Convertir pivot table a DataFrame para mejor visualización
-                pivot_df = pivot_table.reset_index()
-                
-                # Estilizar la tabla con st.dataframe y ocultar el índice
-                st.dataframe(pivot_df, use_container_width=True, hide_index=True)
-                
-                # Mostrar tabla de beneficiarios por localidad
-                st.markdown('<h3 style="font-size: 20px; margin: 20px 0 15px 0;">Beneficiarios por Localidad</h3>', unsafe_allow_html=True)
-                
-                # Filtrar solo beneficiarios del DataFrame ya filtrado por departamento/localidad
-                beneficiarios_estados = ["BENEFICIARIO", "BENEFICIARIO- CTI"]
-                df_beneficiarios = df_filtered[df_filtered['N_ESTADO_FICHA'].isin(beneficiarios_estados)]
-                
-                if df_beneficiarios.empty:
-                    st.warning("No hay beneficiarios con los filtros seleccionados.")
-                else:
-                    # Crear pivot table para mostrar cada estado en una columna separada
-                    df_pivot = df_beneficiarios.pivot_table(
-                        index=['N_DEPARTAMENTO', 'N_LOCALIDAD'],
-                        columns='N_ESTADO_FICHA',
-                        values='ID_FICHA',
-                        aggfunc='count',
-                        fill_value=0
-                    ).reset_index()
-                    
-                    # Renombrar columnas para mejor visualización
-                    if 'BENEFICIARIO' not in df_pivot.columns:
-                        df_pivot['BENEFICIARIO'] = 0
-                    if 'BENEFICIARIO- CTI' not in df_pivot.columns:
-                        df_pivot['BENEFICIARIO- CTI'] = 0
-                    
-                    # Añadir columna de total
-                    df_pivot['TOTAL'] = df_pivot['BENEFICIARIO'] + df_pivot['BENEFICIARIO- CTI']
-                    
-                    # Ordenar por departamento y total (descendente)
-                    df_pivot_sorted = df_pivot.sort_values(['N_DEPARTAMENTO', 'TOTAL'], ascending=[True, False])
-                    
-                    # Mostrar tabla con estilo mejorado y sin índice
-                    st.dataframe(
-                        df_pivot_sorted,
-                        use_container_width=True,
-                        hide_index=True
-                    )
             
             # Mostrar distribución geográfica si hay datos geojson y no hay filtros específicos
             if geojson_data is not None and selected_dpto == all_dpto_option:
@@ -495,93 +575,22 @@ def show_empleo_dashboard(data, dates):
                 st.write(f"Datos para el mapa (agrupados por {id_field}):")
                 st.dataframe(df_mapa)
                 
-                # Intentar crear el mapa con los datos disponibles
-                try:
-                    # Determinar qué campo usar para la relación
-                    if isinstance(geojson_data, dict) and 'features' in geojson_data:
-                        # Verificar qué campos están disponibles en el GeoJSON
-                        sample_props = geojson_data['features'][0]['properties'] if geojson_data['features'] else {}
-                        
-                        # Usar CODDEPTO (en mayúsculas) como clave de relación
-                        featureidkey = "properties.CODDEPTO"
-                        
-                        # Intentar un enfoque alternativo para el mapa
-                        try:
-                            # Crear mapa coroplético simplificado
-                            fig = px.choropleth_mapbox(
-                                df_mapa,
-                                geojson=geojson_data,
-                                locations=id_field,
-                                featureidkey=featureidkey,
-                                color='Cantidad',
-                                color_continuous_scale="Blues",
-                                mapbox_style="carto-positron",
-                                zoom=6,
-                                center={"lat": -31.4, "lon": -64.2},
-                                opacity=0.7,
-                                labels={'Cantidad': 'Beneficiarios'}
-                            )
-                            
-                            fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=600)
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            # Si el mapa anterior no funciona, intentar con un enfoque más simple
-                            st.write("Intentando con un enfoque alternativo...")
-                            
-                            # Crear un mapa simple con Plotly Express
-                            fig2 = px.choropleth(
-                                df_mapa,
-                                geojson=geojson_data,
-                                locations=id_field,
-                                featureidkey=featureidkey,
-                                color='Cantidad',
-                                color_continuous_scale="Blues",
-                                scope="south america"
-                            )
-                            
-                            fig2.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=600)
-                            st.plotly_chart(fig2, use_container_width=True)
-                            
-                        except Exception as e:
-                            st.error(f"Error al crear el mapa: {str(e)}")
-                            
-                            # Intentar un enfoque aún más simple
-                            st.write("Intentando con un mapa básico...")
-                            try:
-                                # Crear un mapa básico sin mapbox
-                                simple_fig = px.choropleth(
-                                    df_mapa,
-                                    geojson=geojson_data,
-                                    locations=id_field,
-                                    featureidkey=featureidkey,
-                                    color='Cantidad',
-                                    color_continuous_scale="Blues"
-                                )
-                                
-                                simple_fig.update_layout(
-                                    margin={"r":0,"t":0,"l":0,"b":0}, 
-                                    height=600,
-                                    geo=dict(
-                                        showframe=False,
-                                        showcoastlines=False,
-                                        projection_type='mercator'
-                                    )
-                                )
-                                st.plotly_chart(simple_fig, use_container_width=True)
-                            except Exception as e2:
-                                st.error(f"Error al crear el mapa básico: {str(e2)}")
-                                
-                                # Mostrar más información de diagnóstico
-                                st.write("Información de diagnóstico adicional:")
-                                st.write("Estructura del GeoJSON:")
-                                if 'features' in geojson_data:
-                                    st.write(f"Número de features: {len(geojson_data['features'])}")
-                                    if geojson_data['features']:
-                                        st.write("Primera feature:")
-                                        st.json(geojson_data['features'][0])
-                except Exception as e:
-                    st.error(f"Error al crear el mapa: {str(e)}")
-                    st.write("Intente verificar que los campos ID_DPTO y CODDEPTO contengan valores compatibles.")
+                # Verificar si los módulos de mapeo están disponibles
+                if not is_mapping_available():
+                    st.warning("La visualización de mapas no está disponible. Para habilitar esta función, instale los paquetes: folium, streamlit-folium y geopandas")
+                    return
+                
+                # Crear y mostrar el mapa usando las funciones del módulo map_utils
+                with st.spinner("Generando mapa..."):
+                    fig = create_choropleth_map(
+                        df=df_mapa,
+                        geojson_data=geojson_data,
+                        location_field=id_field,
+                        color_field='Cantidad',
+                        title="Distribución de Beneficiarios por Departamento",
+                        center={"lat": -31.4, "lon": -64.2}  # Córdoba, Argentina
+                    )
+                    display_map(fig)
         with tab_empresas:
             if has_empresas:
                 show_companies(df_empresas, geojson_data)
@@ -595,6 +604,10 @@ def show_empleo_dashboard(data, dates):
         st.error(f"Error al procesar los datos: {str(e)}")
 
 def show_companies(df_empresas, geojson_data):
+    # Verificar si los módulos de mapeo están disponibles
+    if not is_mapping_available() and geojson_data is not None:
+        st.warning("La visualización de mapas no está disponible. Para habilitar esta función, instale los paquetes: folium, streamlit-folium y geopandas")
+
     # Asegúrate de que las columnas numéricas sean del tipo correcto
     if 'CANTIDAD_EMPLEADOS' in df_empresas.columns:
         df_empresas['CANTIDAD_EMPLEADOS'] = pd.to_numeric(df_empresas['CANTIDAD_EMPLEADOS'], errors='coerce')
@@ -657,13 +670,63 @@ def show_companies(df_empresas, geojson_data):
             
             # Improved chart with better colors and styling
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            stacked_bar_chart_2 = alt.Chart(df_puesto_agg_top10).mark_bar().encode(
-                x=alt.X('CUIT:Q', title='Cantidad de Empleados'),
-                y=alt.Y('N_CATEGORIA_EMPLEO:N', title='Categoría de Empleo', sort='-x'),
-                color=alt.Color('NOMBRE_TIPO_EMPRESA:N', title='Tipo de Empresa', scale=alt.Scale(scheme='blues')),
-                tooltip=['N_CATEGORIA_EMPLEO', 'NOMBRE_TIPO_EMPRESA', 'CUIT']
-            ).properties(width=600, height=400)
-            st.altair_chart(stacked_bar_chart_2, use_container_width=True)
+            
+            if ALTAIR_AVAILABLE:
+                chart_cat = alt.Chart(df_puesto_agg_top10).mark_bar(
+                    cornerRadiusTopRight=5,
+                    cornerRadiusBottomRight=5
+                ).encode( 
+                    x=alt.X('CUIT:Q', title=''),  
+                    y=alt.Y('N_CATEGORIA_EMPLEO:N', title=''), 
+                    tooltip=['N_CATEGORIA_EMPLEO', 'NOMBRE_TIPO_EMPRESA', 'CUIT'],
+                    text=alt.Text('CUIT', format=',d'),
+                    color=alt.value('#4e73df')  # Consistent color scheme
+                ).properties(
+                    width=600,
+                    height=400
+                )
+                
+                # Agregar las labels al gráfico
+                text = alt.Chart(df_puesto_agg_top10).mark_text(
+                    align='left',
+                    baseline='middle',
+                    dx=3,
+                    color='white'  # Better contrast for text
+                ).encode(
+                    x=alt.X('CUIT:Q', title=''),  
+                    y=alt.Y('N_CATEGORIA_EMPLEO:N', title=''), 
+                    text='CUIT'
+                )
+    
+                # Primero combinar los gráficos con layer
+                combined_chart = alt.layer(chart_cat, text)
+                
+                # Luego aplicar la configuración al gráfico combinado
+                combined_chart = combined_chart.configure_axisY(labels=False, domain=False, ticks=False)
+                
+                # Mostrar el gráfico combinado
+                st.altair_chart(combined_chart, use_container_width=True)
+            else:
+                # Alternativa usando Plotly si Altair no está disponible
+                fig = px.bar(
+                    df_puesto_agg_top10, 
+                    x='CUIT', 
+                    y='N_CATEGORIA_EMPLEO',
+                    text='CUIT',
+                    labels={'CUIT': '', 'N_CATEGORIA_EMPLEO': ''},
+                    height=400,
+                    color_discrete_sequence=['#4e73df']
+                )
+                fig.update_layout(
+                    yaxis={'categoryorder': 'total ascending'},
+                    showlegend=False
+                )
+                fig.update_traces(
+                    textposition='inside',
+                    textfont_color='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
             st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("<hr style='border: 1px solid #e0e0e0; margin: 20px 0;'>", unsafe_allow_html=True)
@@ -738,41 +801,62 @@ def show_companies(df_empresas, geojson_data):
             else:
                 df_cat_count_final = df_cat_count.copy()
 
-            # Improved chart with better colors
-            chart_cat = alt.Chart(df_cat_count_final).mark_bar(
-                cornerRadiusTopRight=5,
-                cornerRadiusBottomRight=5
-            ).encode( 
-                x=alt.X('Empresas que Buscan', title=''),  
-                y=alt.Y('N_CATEGORIA_EMPLEO', sort='-x', title=''), 
-                tooltip=['N_CATEGORIA_EMPLEO', 'Empresas que Buscan'],
-                text=alt.Text('Empresas que Buscan', format=',d'),
-                color=alt.value('#4e73df')  # Consistent color scheme
-            ).properties(
-                width=600,
-                height=400
-            )
-            
-            # Agregar las labels al gráfico
-            text = alt.Chart(df_cat_count_final).mark_text(
-                align='left',
-                baseline='middle',
-                dx=3,
-                color='white'  # Better contrast for text
-            ).encode(
-                x=alt.X('Empresas que Buscan', title=''),  
-                y=alt.Y('N_CATEGORIA_EMPLEO', sort='-x', title=''), 
-                text='Empresas que Buscan'
-            )
-
-            # Primero combinar los gráficos con layer
-            combined_chart = alt.layer(chart_cat, text)
-            
-            # Luego aplicar la configuración al gráfico combinado
-            combined_chart = combined_chart.configure_axisY(labels=False, domain=False, ticks=False)
-            
-            # Mostrar el gráfico combinado
-            st.altair_chart(combined_chart, use_container_width=True)
+            if ALTAIR_AVAILABLE:
+                chart_cat = alt.Chart(df_cat_count_final).mark_bar(
+                    cornerRadiusTopRight=5,
+                    cornerRadiusBottomRight=5
+                ).encode( 
+                    x=alt.X('Empresas que Buscan', title=''),  
+                    y=alt.Y('N_CATEGORIA_EMPLEO:N', title=''), 
+                    tooltip=['N_CATEGORIA_EMPLEO', 'Empresas que Buscan'],
+                    text=alt.Text('Empresas que Buscan', format=',d'),
+                    color=alt.value('#4e73df')  # Consistent color scheme
+                ).properties(
+                    width=600,
+                    height=400
+                )
+                
+                # Agregar las labels al gráfico
+                text = alt.Chart(df_cat_count_final).mark_text(
+                    align='left',
+                    baseline='middle',
+                    dx=3,
+                    color='white'  # Better contrast for text
+                ).encode(
+                    x=alt.X('Empresas que Buscan', title=''),  
+                    y=alt.Y('N_CATEGORIA_EMPLEO:N', title=''), 
+                    text='Empresas que Buscan'
+                )
+    
+                # Primero combinar los gráficos con layer
+                combined_chart = alt.layer(chart_cat, text)
+                
+                # Luego aplicar la configuración al gráfico combinado
+                combined_chart = combined_chart.configure_axisY(labels=False, domain=False, ticks=False)
+                
+                # Mostrar el gráfico combinado
+                st.altair_chart(combined_chart, use_container_width=True)
+            else:
+                # Alternativa usando Plotly si Altair no está disponible
+                fig = px.bar(
+                    df_cat_count_final, 
+                    x='Empresas que Buscan', 
+                    y='N_CATEGORIA_EMPLEO',
+                    text='Empresas que Buscan',
+                    labels={'Empresas que Buscan': '', 'N_CATEGORIA_EMPLEO': ''},
+                    height=400,
+                    color_discrete_sequence=['#4e73df']
+                )
+                fig.update_layout(
+                    yaxis={'categoryorder': 'total ascending'},
+                    showlegend=False
+                )
+                fig.update_traces(
+                    textposition='inside',
+                    textfont_color='white'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
             st.markdown('</div>', unsafe_allow_html=True)
 
 def show_inscriptions(df_inscriptos, df_poblacion, geojson_data, file_date):
@@ -785,6 +869,10 @@ def show_inscriptions(df_inscriptos, df_poblacion, geojson_data, file_date):
         geojson_data: Datos GeoJSON para mapas
         file_date: Fecha de actualización de los archivos
     """
+    
+    # Verificar si los módulos de mapeo están disponibles cuando se intenta usar geojson_data
+    if not is_mapping_available() and geojson_data is not None:
+        st.warning("La visualización de mapas no está disponible. Para habilitar esta función, instale los paquetes: folium, streamlit-folium y geopandas")
 
     # Verificar que los DataFrames no estén vacíos
     if df_inscriptos is None:
@@ -800,7 +888,7 @@ def show_inscriptions(df_inscriptos, df_poblacion, geojson_data, file_date):
         if 'CUIL' in df_inscriptos.columns:
             df_inscriptos['CUIL'] = df_inscriptos['CUIL'].astype(str).str.replace("-", "", regex=False)
         
-        # Definir mapeo de programas
+        # Definir mapeo de programas según IDETAPA
         programas = {
             53: "Programa Primer Paso",
             51: "Más 26",

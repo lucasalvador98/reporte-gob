@@ -3,6 +3,17 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+from utils.ui_components import display_kpi_row, create_bco_gente_kpis
+from utils.styles import COLORES_IDENTIDAD
+
+# Definición unificada de categorías de estado a nivel de módulo
+ESTADO_CATEGORIAS = {
+    "En Evaluación": ["CREADO","EVALUACIÓN TÉCNICA","COMENZADO"],
+    "Rechazados - Bajas": ["RECHAZADO","DESISTIDO","IMPAGO DESISTIDO","BAJA ADMINISTRATIVA"],
+    "A Pagar - Convocatoria": ["A PAGAR","A PAGAR CON LOTE","A PAGAR CON BANCO","A PAGAR ENVIADO A SUAF","A PAGAR CON SUAF","MUTUO FIRMADO"],
+    "Pagados": ["PAGADO","PRE-FINALIZADO","FINALIZADO","CON PLAN DE CUOTAS","CON PLAN DE CUOTAS CON IMPAGOS","MOROSO ENTRE 3 Y 4 MESES","MOROSO >= 5 MESES"],
+    "En proceso de pago": ["PAGO EMITIDO","IMPAGO"]
+}
 
 def show_bco_gente_dashboard(data, dates):
     """
@@ -12,21 +23,133 @@ def show_bco_gente_dashboard(data, dates):
         data: Diccionario de dataframes cargados desde GitLab
         dates: Diccionario de fechas de actualización de los archivos
     """
+    # Crear diccionario para tooltips de categorías - Definido a nivel global para usar en todas las tablas
+    tooltips_categorias = {
+        "En Evaluación": ", ".join(ESTADO_CATEGORIAS["En Evaluación"]),
+        "Rechazados - Bajas": ", ".join(ESTADO_CATEGORIAS["Rechazados - Bajas"]),
+        "A Pagar - Convocatoria": ", ".join(ESTADO_CATEGORIAS["A Pagar - Convocatoria"]),
+        "Pagados": ", ".join(ESTADO_CATEGORIAS["Pagados"]),
+        "En proceso de pago": ", ".join(ESTADO_CATEGORIAS["En proceso de pago"])
+    }
+    
     # Extraer los dataframes necesarios
-    try:
-        df_global = data.get('vt_nomina_rep_dpto_localidad.parquet')
-        df_recupero = data.get('VT_NOMINA_REP_RECUPERO_X_ANIO.parquet')
-        geojson_data = data.get('capa_departamentos_2010.geojson')
-        df_departamentos = data.get('LOCALIDAD CIRCUITO ELECTORAL GEO Y ELECTORES - USAR.txt')
+    df_global = data.get('vt_nomina_rep_dpto_localidad.parquet')
+    df_recupero = data.get('VT_NOMINA_REP_RECUPERO_X_ANIO.parquet')
+    geojson_data = data.get('capa_departamentos_2010.geojson')
+    df_localidad_municipio = data.get('LOCALIDAD CIRCUITO ELECTORAL GEO Y ELECTORES - USAR.txt')
+    
+    # Verificar silenciosamente si los archivos existen
+    has_global_data = df_global is not None and not df_global.empty
+    has_recupero_data = df_recupero is not None and not df_recupero.empty
+    has_geojson_data = geojson_data is not None
+    
+    # Renombrar valores en N_LINEA_PRESTAMO
+    if has_global_data and 'N_LINEA_PRESTAMO' in df_global.columns:
+        # Reemplazar "L4." por "INICIAR EMPRENDIMIENTO"
+        df_global['N_LINEA_PRESTAMO'] = df_global['N_LINEA_PRESTAMO'].replace("L4.", "INICIAR EMPRENDIMIENTO")
+    
+    # Corregir localidades del departamento CAPITAL
+    if has_global_data and 'N_DEPARTAMENTO' in df_global.columns and 'N_LOCALIDAD' in df_global.columns:
+        # Crear una máscara para identificar registros del departamento CAPITAL
+        capital_mask = df_global['N_DEPARTAMENTO'] == 'CAPITAL'
         
-        # Verificar silenciosamente si los archivos existen
-        has_global_data = df_global is not None and not df_global.empty
-        has_recupero_data = df_recupero is not None and not df_recupero.empty
-        has_geojson_data = geojson_data is not None
+        # Aplicar la corrección de localidad
+        df_global.loc[capital_mask, 'N_LOCALIDAD'] = 'CORDOBA'
         
-    except Exception as e:
-        st.info("No se pudieron procesar algunos datos. Mostrando información disponible.")
-        return
+        # Si existe la columna ID_LOCALIDAD, corregirla también
+        if 'ID_LOCALIDAD' in df_global.columns:
+            df_global.loc[capital_mask, 'ID_LOCALIDAD'] = 1
+    
+    # Filtrar registros con N_DEPARTAMENTO nulo o igual a "BURRUYACU"
+    if has_global_data and 'N_DEPARTAMENTO' in df_global.columns:
+        # Crear máscara para identificar registros a excluir
+        exclude_mask = (df_global['N_DEPARTAMENTO'].isna()) | (df_global['N_DEPARTAMENTO'] == 'BURRUYACU')
+        
+        # Filtrar el DataFrame para excluir estos registros
+        df_global = df_global[~exclude_mask]
+        
+        # Verificar si todavía hay datos después del filtrado
+        has_global_data = not df_global.empty
+        if not has_global_data:
+            st.warning("No hay datos disponibles después de aplicar los filtros por departamento.")
+    
+    # Filtrar líneas de préstamo que no deben ser consideradas
+    if has_global_data and 'N_LINEA_PRESTAMO' in df_global.columns:
+        # Lista de líneas de préstamo a excluir
+        lineas_a_excluir = ["L1", "L3", "L4", "L6"]
+        
+        # Filtrar el DataFrame para excluir estas líneas
+        df_global = df_global[~df_global['N_LINEA_PRESTAMO'].isin(lineas_a_excluir)]
+        
+        # Verificar si todavía hay datos después del filtrado
+        has_global_data = not df_global.empty
+        if not has_global_data:
+            st.warning("No hay datos disponibles después de aplicar los filtros por línea de préstamo.")
+
+    
+    # Mostrar información de actualización de datos
+    if dates and any(dates.values()):
+        # Mostrar fecha de actualización si está disponible
+        for file_name, date_str in dates.items():
+            if 'vt_nomina_rep_dpto_localidad' in file_name.lower() and date_str:
+                try:
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d %H:%M:%S')
+                    st.info(f"Datos actualizados al: {date_obj.strftime('%d/%m/%Y')}")
+                    break
+                except:
+                    pass
+    
+    # Crear una copia del DataFrame para trabajar con él
+    df_filtrado_global = df_global.copy()
+    
+    # Contenedor para filtros
+    st.markdown('<div class="filter-container">', unsafe_allow_html=True)
+    st.markdown('<h3 style="font-size: 18px; margin-top: 0;">Filtros</h3>', unsafe_allow_html=True)
+    
+    # Crear tres columnas para los filtros
+    col1, col2, col3 = st.columns(3)
+    
+    # Filtro de departamento en la primera columna
+    with col1:
+        departamentos = sorted(df_filtrado_global['N_DEPARTAMENTO'].dropna().unique())
+        all_dpto_option = "Todos los departamentos"
+        selected_dpto = st.selectbox("Departamento:", [all_dpto_option] + list(departamentos), key="bco_dpto_filter")
+    
+    # Filtrar por departamento seleccionado
+    if selected_dpto != all_dpto_option:
+        df_filtrado_global = df_filtrado_global[df_filtrado_global['N_DEPARTAMENTO'] == selected_dpto]
+        # Filtro de localidad (dependiente del departamento)
+        localidades = sorted(df_filtrado_global['N_LOCALIDAD'].dropna().unique())
+        all_loc_option = "Todas las localidades"
+        
+        # Mostrar filtro de localidad en la segunda columna
+        with col2:
+            selected_loc = st.selectbox("Localidad:", [all_loc_option] + list(localidades), key="bco_loc_filter")
+        
+        if selected_loc != all_loc_option:
+            df_filtrado_global = df_filtrado_global[df_filtrado_global['N_LOCALIDAD'] == selected_loc]
+    else:
+        # Si no se seleccionó departamento, mostrar todas las localidades
+        localidades = sorted(df_filtrado_global['N_LOCALIDAD'].dropna().unique())
+        all_loc_option = "Todas las localidades"
+        
+        # Mostrar filtro de localidad en la segunda columna
+        with col2:
+            selected_loc = st.selectbox("Localidad:", [all_loc_option] + list(localidades), key="bco_loc_filter")
+        
+        if selected_loc != all_loc_option:
+            df_filtrado_global = df_filtrado_global[df_filtrado_global['N_LOCALIDAD'] == selected_loc]
+    
+    # Filtro de línea de préstamo en la tercera columna
+    with col3:
+        lineas_prestamo = sorted(df_filtrado_global['N_LINEA_PRESTAMO'].dropna().unique())
+        all_lineas_option = "Todas las líneas"
+        selected_linea = st.selectbox("Línea de préstamo:", [all_lineas_option] + list(lineas_prestamo), key="bco_linea_filter")
+    
+    if selected_linea != all_lineas_option:
+        df_filtrado_global = df_filtrado_global[df_filtrado_global['N_LINEA_PRESTAMO'] == selected_linea]
+    
+    st.markdown('</div>', unsafe_allow_html=True)
     
     # Mostrar información de actualización de datos
     if dates and any(dates.values()):
@@ -34,309 +157,541 @@ def show_bco_gente_dashboard(data, dates):
         if latest_date:
             st.caption(f"Última actualización de datos: {latest_date}")
     
-    # Crear pestañas para diferentes vistas
-    tab1, tab2 = st.tabs(["Global", "Recupero"])
+    # Crear pestañas para las diferentes vistas
+    tab_global, tab_recupero = st.tabs(["GLOBAL", "RECUPERO"])
     
-    with tab1:
-        if has_global_data and has_geojson_data:
-            mostrar_global(geojson_data, df_departamentos, df_global, df_recupero)
-        else:
-            st.info("No hay datos suficientes para mostrar la vista global.")
+    with tab_global:
+        # Mostrar los datos filtrados en la pestaña GLOBAL
+        mostrar_global(df_filtrado_global, tooltips_categorias, df_recupero)
     
-    with tab2:
-        if has_recupero_data and has_geojson_data:
-            mostrar_recupero(df_recupero, df_departamentos, geojson_data)
-        else:
-            st.info("No hay datos suficientes para mostrar la vista de recupero.")
-    
+    with tab_recupero:
+        # Mostrar los datos de recupero en la pestaña RECUPERO
+        mostrar_recupero(df_recupero, df_localidad_municipio, geojson_data)
 
-def mostrar_global(geojson_data, df_departamentos, df_global, df_recupero=None):
-    # Agregar título y fecha del archivo
-    st.title("Análisis Global de Formularios")
 
-    # Conversión de columnas de fecha con validación de rango
-    date_columns = ['FECHA_INGRESO', 'FEC_INICIO_PAGO', 'FEC_FIN_PAGO']
-    min_date = pd.Timestamp.min
-    max_date = pd.Timestamp.max
 
-    for col in date_columns:
-        if col in df_global.columns:
-            df_global[col] = pd.to_datetime(df_global[col], errors='coerce')
-            df_global.loc[(df_global[col] < min_date) | (df_global[col] > max_date), col] = pd.NaT
-
-    # Eliminar filas con fechas inválidas
-    df_global = df_global.dropna(subset=['FECHA_INGRESO'])
-
-    if df_global.empty:
-        st.warning("No hay datos válidos después de procesar las fechas. Verifica los datos cargados.")
-        return
-
-    # Filtrar los datos por las fechas seleccionadas (sin barra lateral)
-    df_filtrado_global = df_global  # Inicialmente el dataframe completo
-
-    # Conteo de formularios por estado utilizando groupby con un diccionario de categorías
-    estado_categorias = {
-        "En Evaluación": [1, 2, 5],
-        "Rechazados": [3, 6, 7, 15, 23],
-        "A Pagar": [4, 9, 10, 11, 12, 13, 19]
-    }
-
-    conteo_estados = (
-        df_filtrado_global.groupby("ID_ESTADO_PRESTAMO")
-        .size()
-        .rename("conteo")
-        .reset_index()
-    )
-
-    # Crear el diccionario de resultados con los totales para cada categoría
-    resultados = {
-        categoria: conteo_estados[conteo_estados["ID_ESTADO_PRESTAMO"].isin(estados)]['conteo'].sum()
-        for categoria, estados in estado_categorias.items()
-    }
-
-    # Diseño de columnas y cuadros de resumen
-    col1, col2, col3 = st.columns(3)
-    cuadro_estilo = """
-        <div style="margin: 10px; padding: 15px; border-radius: 8px; background-color: {bg_color}; color: {text_color};
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); font-family: Arial, sans-serif;">
-            <h3 style="text-align: center; font-size: 18px;">{titulo}</h3>
-            <p style="text-align: center; font-size: 32px; font-weight: bold;">{cantidad}</p>
-        </div>
+def mostrar_global(df_filtrado_global, tooltips_categorias, df_recupero=None):
     """
+    Muestra los datos globales del Banco de la Gente.
+    
+    Args:
+        df_filtrado_global: DataFrame filtrado con datos globales
+        tooltips_categorias: Diccionario con tooltips para cada categoría
+        df_recupero: DataFrame con datos de recupero para la serie histórica
+    """
+    # Asegurarse de que N_ESTADO_PRESTAMO sea string
+    try:
+        df_filtrado_global['N_ESTADO_PRESTAMO'] = df_filtrado_global['N_ESTADO_PRESTAMO'].astype(str)
+    except Exception as e:
+        st.error(f"Error al convertir N_ESTADO_PRESTAMO a string: {e}")
+    
+    # Crear el conteo de estados
+    try:
+        conteo_estados = (
+            df_filtrado_global.groupby("N_ESTADO_PRESTAMO")
+            .size()
+            .rename("conteo")
+            .reset_index()
+        )
+        
+        # Crear el diccionario de resultados con los totales para cada categoría
+        resultados = {
+            categoria: conteo_estados[conteo_estados["N_ESTADO_PRESTAMO"].isin(estados)]['conteo'].sum()
+            for categoria, estados in ESTADO_CATEGORIAS.items()
+        }
+    except Exception as e:
+        st.error(f"Error al calcular conteo de estados: {e}")
+        resultados = {categoria: 0 for categoria in ESTADO_CATEGORIAS.keys()}
+    
+    # Usar la función de ui_components para crear y mostrar KPIs
+    kpi_data = create_bco_gente_kpis(resultados)
+    display_kpi_row(kpi_data)
 
-    with col1:
-        st.markdown(cuadro_estilo.format(
-            titulo="Formularios en Evaluación",
-            cantidad="{:,.0f}".format(resultados["En Evaluación"]),
-            bg_color="#d9edf7", text_color="#31708f"), unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(cuadro_estilo.format(
-            titulo="Formularios Rechazados",
-            cantidad="{:,.0f}".format(resultados["Rechazados"]),
-            bg_color="#f2dede", text_color="#a94442"), unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(cuadro_estilo.format(
-            titulo="Formularios A Pagar",
-            cantidad="{:,.0f}".format(resultados["A Pagar"]),
-            bg_color="#dff0d8", text_color="#3c763d"), unsafe_allow_html=True)
-
+    # Línea divisoria en gris claro
+    st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
+    
+    # Nueva tabla: Conteo de Préstamos por Línea y Estado
+    st.subheader("Conteo de Préstamos por Línea y Estado")
+    
+    try:
+        # Verificar que las columnas necesarias existan en el DataFrame
+        required_columns = ['N_LINEA_PRESTAMO', 'N_ESTADO_PRESTAMO', 'NRO_SOLICITUD']
+        missing_columns = [col for col in required_columns if col not in df_filtrado_global.columns]
+        
+        if missing_columns:
+            st.warning(f"No se pueden mostrar el conteo de préstamos por línea. Faltan columnas: {', '.join(missing_columns)}")
+        else:
+            # Definir las categorías a mostrar
+            categorias_mostrar = ["A Pagar - Convocatoria", "Pagados", "En proceso de pago"]
+            
+            # Usar @st.cache_data para evitar recalcular si los datos no cambian
+            @st.cache_data
+            def prepare_linea_data(df, categorias_mostrar):
+                # Crear copia del DataFrame para manipulación
+                df_conteo = df.copy()
+                
+                # Agregar columna de categoría basada en N_ESTADO_PRESTAMO
+                df_conteo['CATEGORIA'] = 'Otros'
+                for categoria in categorias_mostrar:
+                    estados = ESTADO_CATEGORIAS.get(categoria, [])
+                    mask = df_conteo['N_ESTADO_PRESTAMO'].isin(estados)
+                    df_conteo.loc[mask, 'CATEGORIA'] = categoria
+                
+                # Filtrar para incluir solo las categorías seleccionadas
+                df_conteo = df_conteo[df_conteo['CATEGORIA'].isin(categorias_mostrar)]
+                
+                # Crear pivot table: Línea de préstamo vs Categoría
+                pivot_linea = pd.pivot_table(
+                    df_conteo,
+                    index=['N_LINEA_PRESTAMO'],
+                    columns='CATEGORIA',
+                    values='NRO_SOLICITUD',
+                    aggfunc='count',
+                    fill_value=0
+                ).reset_index()
+                
+                # Asegurar que todas las categorías estén en la tabla
+                for categoria in categorias_mostrar:
+                    if categoria not in pivot_linea.columns:
+                        pivot_linea[categoria] = 0
+                
+                # Calcular totales por línea
+                pivot_linea['Total'] = pivot_linea[categorias_mostrar].sum(axis=1)
+                
+                # Agregar fila de totales
+                totales = pivot_linea[categorias_mostrar + ['Total']].sum()
+                totales_row = pd.DataFrame([['Total'] + totales.values.tolist()], 
+                                          columns=['N_LINEA_PRESTAMO'] + categorias_mostrar + ['Total'])
+                return pd.concat([pivot_linea, totales_row], ignore_index=True)
+            
+            # Obtener el DataFrame procesado usando caché
+            pivot_df = prepare_linea_data(df_filtrado_global, categorias_mostrar)
+            
+            # Crear HTML personalizado para la tabla de conteo por línea
+            html_table_linea = """
+                <style>
+                    .linea-table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 20px;
+                        font-size: 14px;
+                    }
+                    .linea-table th, .linea-table td {
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                        text-align: right;
+                    }
+                    .linea-table th {
+                        background-color: #0072bb;
+                        color: white;
+                        text-align: center;
+                    }
+                    .linea-table td:first-child {
+                        text-align: left;
+                    }
+                    .linea-table .total-row {
+                        background-color: #f2f2f2;
+                        font-weight: bold;
+                    }
+                    .linea-table .total-col {
+                        font-weight: bold;
+                    }
+                    .linea-table .group-header {
+                        background-color: #005587;
+                    }
+                    .linea-table .value-header {
+                        background-color: #0072bb;
+                    }
+                    .linea-table .total-header {
+                        background-color: #004b76;
+                    }
+                </style>
+            """
+            
+            # Crear tabla HTML
+            html_table_linea += '<table class="linea-table"><thead><tr>'
+            html_table_linea += '<th class="group-header">Línea de Préstamo</th>'
+            
+            # Agregar encabezados para cada categoría
+            for categoria in categorias_mostrar:
+                # Usar tooltips_categorias si está disponible, de lo contrario crear uno básico
+                tooltip_text = ""
+                if 'tooltips_categorias' in locals() or 'tooltips_categorias' in globals():
+                    tooltip_text = tooltips_categorias.get(categoria, "")
+                else:
+                    # Crear tooltip básico con los estados de la categoría
+                    tooltip_text = ", ".join(ESTADO_CATEGORIAS.get(categoria, []))
+                
+                html_table_linea += f'<th class="value-header" title="{tooltip_text}">{categoria}</th>'
+            
+            # Encabezado para la columna de total
+            html_table_linea += '<th class="total-header">Total</th>'
+            html_table_linea += '</tr></thead><tbody>'
+            
+            # Agregar filas para cada línea de préstamo
+            for idx, row in pivot_df.iterrows():
+                # Formato especial para la fila de totales
+                if row['N_LINEA_PRESTAMO'] == 'Total':
+                    html_table_linea += '<tr class="total-row">'
+                else:
+                    html_table_linea += '<tr>'
+                
+                # Columna de línea de préstamo
+                html_table_linea += f'<td>{row["N_LINEA_PRESTAMO"]}</td>'
+                
+                # Columnas para cada categoría
+                for categoria in categorias_mostrar:
+                    valor = int(row[categoria]) if categoria in row else 0
+                    html_table_linea += f'<td>{valor}</td>'
+                
+                # Columna de total
+                html_table_linea += f'<td class="total-col">{int(row["Total"])}</td>'
+                html_table_linea += '</tr>'
+            
+            html_table_linea += '</tbody></table>'
+            
+            # Mostrar la tabla
+            st.markdown(html_table_linea, unsafe_allow_html=True)
+    except Exception as e:
+        st.warning(f"Error al generar la tabla de conteo por línea: {str(e)}")
+    
+    # Tabla de estados de préstamos agrupados
+    st.subheader("Estados de Préstamos por Categoría")
+    
+    try:
+        # Verificar que las columnas necesarias existan en el DataFrame
+        required_columns = ['N_DEPARTAMENTO', 'N_LOCALIDAD', 'N_ESTADO_PRESTAMO', 'NRO_SOLICITUD']
+        missing_columns = [col for col in required_columns if col not in df_filtrado_global.columns]
+        
+        if missing_columns:
+            st.warning(f"No se pueden mostrar los estados de préstamos. Faltan columnas: {', '.join(missing_columns)}")
+        else:
+            # Filtro específico para esta tabla - Categorías de estado
+            categorias_orden = list(ESTADO_CATEGORIAS.keys())
+            # Excluir "Rechazados - Bajas" de las categorías disponibles
+            if "Rechazados - Bajas" in categorias_orden:
+                categorias_orden.remove("Rechazados - Bajas")
+            
+            # Usar st.session_state para mantener las categorías seleccionadas
+            if 'selected_categorias' not in st.session_state:
+                st.session_state.selected_categorias = categorias_orden
+                
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                # Multiselect para seleccionar categorías
+                selected_categorias = st.multiselect(
+                    "Filtrar por categorías de estado:",
+                    options=categorias_orden,
+                    default=st.session_state.selected_categorias,
+                    key="estado_categoria_filter"
+                )
+                
+                # Actualizar session_state solo si cambia la selección
+                if selected_categorias != st.session_state.selected_categorias:
+                    st.session_state.selected_categorias = selected_categorias
+            
+            # Si no se selecciona ninguna categoría, mostrar todas
+            if not selected_categorias:
+                selected_categorias = categorias_orden
+                
+            # Crear copia del DataFrame para manipulación
+            # Usar @st.cache_data para evitar recalcular si los datos no cambian
+            @st.cache_data
+            def prepare_categoria_data(df, categorias):
+                df_copy = df.copy()
+                
+                # Agregar columna de categoría basada en N_ESTADO_PRESTAMO
+                df_copy['CATEGORIA'] = 'Otros'
+                for categoria, estados in ESTADO_CATEGORIAS.items():
+                    mask = df_copy['N_ESTADO_PRESTAMO'].isin(estados)
+                    df_copy.loc[mask, 'CATEGORIA'] = categoria
+                
+                # Crear pivot table con conteo agrupado por categorías
+                pivot_df = df_copy.pivot_table(
+                    index=['N_DEPARTAMENTO', 'N_LOCALIDAD'],
+                    columns='CATEGORIA',
+                    values='NRO_SOLICITUD',
+                    aggfunc='count',
+                    fill_value=0
+                ).reset_index()
+                
+                # Asegurar que todas las categorías estén en la tabla
+                for categoria in ESTADO_CATEGORIAS.keys():
+                    if categoria not in pivot_df.columns:
+                        pivot_df[categoria] = 0
+                
+                # Reordenar columnas para mostrar en orden consistente
+                return pivot_df.reindex(columns=['N_DEPARTAMENTO', 'N_LOCALIDAD'] + list(ESTADO_CATEGORIAS.keys()))
+            
+            # Obtener el DataFrame procesado usando caché
+            pivot_df = prepare_categoria_data(df_filtrado_global, categorias_orden)
+            
+            # Filtrar solo las columnas seleccionadas
+            columnas_mostrar = ['N_DEPARTAMENTO', 'N_LOCALIDAD'] + selected_categorias
+            pivot_df_filtered = pivot_df[columnas_mostrar].copy()
+            
+            # Agregar columna de total para las categorías seleccionadas
+            pivot_df_filtered['Total'] = pivot_df_filtered[selected_categorias].sum(axis=1)
+            
+            # Agregar fila de totales
+            totales = pivot_df_filtered[selected_categorias + ['Total']].sum()
+            totales_row = pd.DataFrame([['Total', 'Total'] + totales.values.tolist()], 
+                                      columns=['N_DEPARTAMENTO', 'N_LOCALIDAD'] + selected_categorias + ['Total'])
+            pivot_df_filtered = pd.concat([pivot_df_filtered, totales_row], ignore_index=True)
+            
+            # Crear tabla HTML con estilos
+            html_table = """
+                <style>
+                    .estado-table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 20px;
+                        font-size: 14px;
+                    }
+                    .estado-table th, .estado-table td {
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                        max-width: 150px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                    }
+                    .estado-table th {
+                        color: white;
+                        text-align: center;
+                    }
+                    .estado-table td {
+                        text-align: right;
+                    }
+                    .estado-table td:first-child, .estado-table td:nth-child(2) {
+                        text-align: left;
+                    }
+                    .estado-table .group-header {
+                        background-color: #005587;
+                    }
+                    .estado-table .value-header {
+                        background-color: #0072bb;
+                    }
+                    .estado-table .total-header {
+                        background-color: #004b76;
+                    }
+                </style>
+            """
+            
+            # Crear la tabla - Simplificar el HTML y eliminar saltos de línea
+            html_table += '<table class="estado-table"><thead><tr>'
+            html_table += '<th class="group-header">Departamento</th>'
+            html_table += '<th class="group-header">Localidad</th>'
+            
+            # Agregar encabezados para cada categoría con tooltips
+            for categoria in selected_categorias:
+                # Usar tooltips_categorias si está disponible, de lo contrario crear uno básico
+                tooltip_text = ""
+                if 'tooltips_categorias' in locals() or 'tooltips_categorias' in globals():
+                    tooltip_text = tooltips_categorias.get(categoria, "")
+                else:
+                    # Crear tooltip básico con los estados de la categoría
+                    tooltip_text = ", ".join(ESTADO_CATEGORIAS.get(categoria, []))
+                
+                html_table += f'<th class="value-header" title="{tooltip_text}">{categoria}</th>'
+            
+            # Agregar encabezado para el total
+            html_table += '<th class="total-header">Total</th>'
+            
+            html_table += '</tr></thead><tbody>'
+            
+            # Agregar filas de datos
+            for index, row in pivot_df_filtered.iterrows():
+                html_table += '<tr>'
+                
+                # Columna Departamento
+                departamento_valor = str(row['N_DEPARTAMENTO'])
+                if departamento_valor == 'Total':
+                    html_table += f'<td style="font-weight: bold; background-color: #f2f2f2;">{departamento_valor}</td>'
+                else:
+                    html_table += f'<td>{departamento_valor}</td>'
+                
+                # Columna Localidad
+                localidad_valor = str(row['N_LOCALIDAD'])
+                if localidad_valor == 'Total':
+                    html_table += f'<td style="font-weight: bold; background-color: #f2f2f2;">{localidad_valor}</td>'
+                else:
+                    html_table += f'<td>{localidad_valor}</td>'
+                
+                # Columnas para cada categoría
+                for categoria in selected_categorias:
+                    if localidad_valor == 'Total' or departamento_valor == 'Total':
+                        cell_style = 'style="font-weight: bold; background-color: #f2f2f2;"'
+                    else:
+                        cell_style = ''
+                    
+                    valor = int(row[categoria]) if categoria in row else 0
+                    html_table += f'<td {cell_style}>{valor}</td>'
+                
+                # Agregar columna de total
+                if 'Total' in row:
+                    total_valor = int(row['Total'])
+                    if localidad_valor == 'Total' or departamento_valor == 'Total':
+                        cell_style = 'style="font-weight: bold; background-color: #f2f2f2;"'
+                    else:
+                        cell_style = ''
+                    html_table += f'<td {cell_style}>{total_valor}</td>'
+                
+                html_table += '</tr>'
+            
+            html_table += '</tbody></table>'
+            
+            # Mostrar la tabla
+            st.markdown(html_table, unsafe_allow_html=True)
+            
+            # Línea divisoria en gris claro
+            st.markdown("<hr style='border: 1px solid #f0f0f0;'>", unsafe_allow_html=True)
+            
+         
+    except Exception as e:
+        st.warning(f"Error al generar la tabla de estados: {str(e)}")
+    
     # Línea divisoria en gris claro
     st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
 
     # Serie Histórica
-    st.subheader("Serie Histórica: Evolución de Formularios a lo Largo del Tiempo")
-    serie_historica = df_filtrado_global.groupby(df_filtrado_global['FECHA_INGRESO'].dt.to_period('M')).size().reset_index(name='Cantidad')
-    serie_historica['FECHA_INGRESO'] = serie_historica['FECHA_INGRESO'].apply(
-        lambda x: x.start_time if min_date <= x.start_time <= max_date else pd.NaT
-    )
-    serie_historica = serie_historica.dropna(subset=['FECHA_INGRESO'])
-
-    fig_historia = px.line(
-        serie_historica, 
-        x='FECHA_INGRESO', 
-        y='Cantidad', 
-        title='Evolución de Formularios por Mes',
-        labels={'Cantidad': 'Cantidad de Formularios', 'FECHA_INGRESO': 'Fecha'},
-        markers=True
-    )
-    st.plotly_chart(fig_historia)
-
-    # Línea divisoria en gris claro
-    st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
-
-    # Gráfico de Torta
-    st.subheader("Gráfico de Torta: Distribución de Formularios por Línea de Préstamo")
-    grafico_torta = df_filtrado_global.groupby('N_LINEA_PRESTAMO').size().reset_index(name='Cantidad')
-
-    fig_torta = px.pie(
-        grafico_torta, 
-        names='N_LINEA_PRESTAMO', 
-        values='Cantidad', 
-        title='Distribución de Formularios por Línea de Préstamo',
-        color_discrete_sequence=px.colors.sequential.RdBu
-    )
-    st.plotly_chart(fig_torta)
-
-    # Línea divisoria en gris claro
-    st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
-
-    # Filtros de fecha al final de la página en un formato compacto
-    st.subheader("Filtros de Fecha para Global")
-
-    # Convertir fechas de entrada a tipo datetime
-    min_date = df_global['FECHA_INGRESO'].min().date()
-    max_date = df_global['FECHA_INGRESO'].max().date()
-
-    # Utilizando una sola fila para los filtros
-    col_inicio, col_fin = st.columns(2)
-
-    with col_inicio:
-        fecha_inicio_global = st.date_input("Fecha de Inicio", min_date)
-
-    with col_fin:
-        fecha_fin_global = st.date_input("Fecha de Fin", max_date)
-
-    # Verificar que las fechas seleccionadas sean válidas
-    if fecha_inicio_global > fecha_fin_global:
-        st.error("La fecha de inicio debe ser anterior a la fecha de fin.")
-        return  # Detener la ejecución si las fechas son inválidas
-
-    # Filtrar los datos por las fechas seleccionadas
-    df_filtrado_global = df_global[
-        (df_global['FECHA_INGRESO'] >= pd.to_datetime(fecha_inicio_global)) & 
-        (df_global['FECHA_INGRESO'] <= pd.to_datetime(fecha_fin_global))
-    ]
-
-    # Confirmar filtro con un botón
-    if st.button("Aplicar Filtros"):
-        st.success(f"Filtros aplicados: desde {fecha_inicio_global} hasta {fecha_fin_global}.")
-
-def mostrar_recupero(df_recupero, df_departamentos, geojson_data):
+    st.subheader("Serie Histórica: Evolución de formularios presentados a lo Largo del Tiempo")
     
-    # --- Procesamiento y Validación de df_recupero ---
-    if 'FEC_FORM' not in df_recupero.columns:
-        st.error("La columna 'FEC_FORM' no se encuentra en el DataFrame.")
-        st.write("Columnas disponibles:", df_recupero.columns.tolist())
-        return
-
-    # Conversión de columnas de fecha con validación de rango
-    date_columns = ['FEC_FORM', 'FEC_INICIO_PAGO', 'FEC_FIN_PAGO']
-    min_date = pd.Timestamp.min
-    max_date = pd.Timestamp.max
-
-    # Validar columnas de fechas necesarias
-    for col in date_columns:
-        if col in df_recupero.columns:
-            df_recupero[col] = pd.to_datetime(df_recupero[col], errors='coerce')
-            df_recupero.loc[(df_recupero[col] < min_date) | (df_recupero[col] > max_date), col] = pd.NaT
-
-    # Eliminar filas con fechas inválidas
-    df_recupero = df_recupero.dropna(subset=['FEC_FORM'])
-
-    if df_recupero.empty:
-        st.warning("No hay datos válidos después de procesar las fechas. Verifica los datos cargados.")
-        return
-
-    # --- Cálculo de solicitudes en las últimas 24 horas ---
-    fecha_actual = datetime.now()
-    fecha_24hs_antes = fecha_actual - timedelta(days=1)
-    solicitudes_ultimas_24hs = df_recupero[df_recupero['FEC_FORM'] >= fecha_24hs_antes]
-    cantidad_solicitudes_24hs = solicitudes_ultimas_24hs.shape[0]
-
-    # --- Categorías de estado ---
-    estado_categorias = {
-        "Pagados": [13, 14, 15, 16, 17, 18, 20, 21, 7],
-        "Créditos con Deuda": [21],
-        "Impagos/Bajas": [23, 22],
-        "Finalizados": [7],
-    }
-
-    # Conteo por categoría
-    conteo_estados = {
-        categoria: df_recupero[df_recupero['ID_ESTADO_PRESTAMO'].isin(estados)].shape[0]
-        for categoria, estados in estado_categorias.items()
-    }
-
-    # --- Diseño de columnas y cuadros de resumen ---
-    col1, col2, col3, col4,col5 = st.columns(5)
-    cuadro_estilo = """
-        <div style="margin: 10px; padding: 15px; border-radius: 8px; background-color: {bg_color}; color: {text_color};
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); font-family: Arial, sans-serif;">
-            <h3 style="text-align: center; font-size: 18px;">{titulo}</h3>
-            <p style="text-align: center; font-size: 32px; font-weight: bold;">{cantidad}</p>
-        </div>
-    """
-
-    # --- Mostrar cuadros de resumen ---
-    with col1:
-        st.markdown(cuadro_estilo.format(
-            titulo="Pagados",
-            cantidad="{:,.0f}".format(conteo_estados["Pagados"]),
-            bg_color="#d9edf7", text_color="#31708f"), unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(cuadro_estilo.format(
-            titulo="Créditos con Deuda",
-            cantidad="{:,.0f}".format(conteo_estados["Créditos con Deuda"]),
-            bg_color="#f2dede", text_color="#a94442"), unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(cuadro_estilo.format(
-            titulo="Impagos/Bajas",
-            cantidad="{:,.0f}".format(conteo_estados["Impagos/Bajas"]),
-            bg_color="#f9e79f", text_color="#8a6d3b"), unsafe_allow_html=True)
-
-    with col4:
-        st.markdown(cuadro_estilo.format(
-            titulo="Finalizados",
-            cantidad="{:,.0f}".format(conteo_estados["Finalizados"]),
-            bg_color="#dff0d8", text_color="#3c763d"), unsafe_allow_html=True)
-        
-    with col5:
-        st.markdown(
-            f"""
-            <div style="display: flex; justify-content: center; flex-direction: column; align-items: center; margin-bottom: 30px;">
-                <div style="width: 120px; height: 120px; background-color: #1E9AD8; color: white; 
-                            border-radius: 50%; display: flex; align-items: center; justify-content: center; 
-                            font-size: 32px; font-weight: bold;">
-                    {cantidad_solicitudes_24hs}
-                </div>
-                <p style="text-align: center; font-size: 16px; margin-top: 10px;">Solicitudes en las últimas 24 horas</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-    ## --- Divisor ---
-    st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
-
-    # --- Calculo de deuda total y prescripta desde df_recupero ---
-    deuda_total_detalle = df_recupero['DEUDA_TOTAL'].sum() if 'DEUDA_TOTAL' in df_recupero.columns else 0
-    deuda_vencida_detalle = df_recupero['DEUDA_VENCIDA'].sum() if 'DEUDA_VENCIDA' in df_recupero.columns else 0
-    deuda_no_vencida_detalle = df_recupero['DEUDA_NO_VENCIDA'].sum() if 'DEUDA_NO_VENCIDA' in df_recupero.columns else 0
-
-    # --- Mostrar tarjetas de DEUDA VENCIDA, DEUDA NO VENCIDA, DEUDA TOTAL---
-    col5, col6, col8,  = st.columns(3)
-
-    with col5:
-        st.markdown(cuadro_estilo.format(
-            titulo="DEUDA VENCIDA",
-            cantidad="${:,.2f}".format(deuda_vencida_detalle),
-            bg_color="#f2dede", text_color="#a94442"), unsafe_allow_html=True)
-
-    with col6:
-        st.markdown(cuadro_estilo.format(
-            titulo="DEUDA NO VENCIDA",
-            cantidad="${:,.2f}".format(deuda_no_vencida_detalle),
-            bg_color="#d9edf7", text_color="#31708f"), unsafe_allow_html=True)
-    
-    with col8:
-        st.markdown(cuadro_estilo.format(
-            titulo="DEUDA TOTAL",
-            cantidad="${:,.2f}".format(deuda_total_detalle),
-            bg_color="#f2dede", text_color="#a94442"), unsafe_allow_html=True)
-
-   
-    ## --- Divisor ---
-    st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
-
-    # --- Serie de tiempo ---
-    st.subheader("Evolución de la Deuda Vencida")
-    if 'DEUDA' in df_recupero.columns and 'FEC_FORM' in df_recupero.columns:
-        df_filtrado_deuda = df_recupero.dropna(subset=['FEC_FORM', 'DEUDA'])
-        deuda_por_fecha = df_filtrado_deuda.groupby(df_filtrado_deuda['FEC_FORM'].dt.date)['DEUDA'].sum().reset_index()
-        deuda_por_fecha.columns = ['Fecha', 'Deuda Total']
-
-        if not deuda_por_fecha.empty:
-            line_chart = px.line(
-                deuda_por_fecha,
-                x='Fecha',
-                y='Deuda Total',
-                labels={'Fecha': 'Fecha', 'Deuda Total': 'Deuda Vencida'},
-                title='Evolución de la Deuda Vencida'
-            )
-            st.plotly_chart(line_chart)
+    try:
+        # Verificar si existe df_recupero y las columnas necesarias
+        if df_recupero is None or df_recupero.empty:
+            st.info("No hay datos disponibles para la serie histórica.")
+        elif 'NRO_SOLICITUD' not in df_recupero.columns or 'FEC_FORM' not in df_recupero.columns:
+            st.info("No hay datos disponibles para la serie histórica.")
         else:
-            st.warning("No se encontraron datos para la serie de tiempo.")
-    else:
-        st.warning("No se encontró la columna 'DEUDA' para generar la serie de tiempo.")
+            # Asegurarse de que la columna FEC_FORM sea de tipo datetime
+            try:
+                # Crear una copia para no modificar el dataframe original
+                df_fechas = df_recupero.copy()
+                
+                # Convertir la columna a datetime si no lo es
+                if not pd.api.types.is_datetime64_any_dtype(df_fechas['FEC_FORM']):
+                    df_fechas['FEC_FORM'] = pd.to_datetime(df_fechas['FEC_FORM'], errors='coerce')
+                
+                # Eliminar filas con fechas inválidas
+                df_fechas = df_fechas.dropna(subset=['FEC_FORM'])
+                
+                # Filtrar fechas futuras (posteriores a la fecha actual)
+                fecha_actual = datetime.now()
+                df_fechas = df_fechas[df_fechas['FEC_FORM'] <= fecha_actual]
+                
+                if df_fechas.empty:
+                    st.info("No hay datos disponibles para la serie histórica.")
+                else:
+                    # Mostrar rango de fechas disponibles
+                    fecha_min = df_fechas['FEC_FORM'].min().strftime('%d/%m/%Y')
+                    fecha_max = df_fechas['FEC_FORM'].max().strftime('%d/%m/%Y')
+                    st.caption(f"Rango de fechas disponibles: {fecha_min} - {fecha_max}")
+                    
+                    # Agrupar por mes y año, y contar NRO_SOLICITUD
+                    # Crear una columna de año-mes para agrupar
+                    df_fechas['AÑO_MES'] = df_fechas['FEC_FORM'].dt.strftime('%Y-%m')
+                    
+                    # Agrupar por AÑO_MES y contar
+                    serie_historica = df_fechas.groupby('AÑO_MES').size().reset_index(name='Cantidad')
+                    
+                    # Convertir AÑO_MES a datetime para graficar
+                    serie_historica['FECHA'] = pd.to_datetime(serie_historica['AÑO_MES'] + '-01')
+                    
+                    # Ordenar por fecha
+                    serie_historica = serie_historica.sort_values('FECHA')
+                    
+                    # Crear el gráfico
+                    fig_historia = px.line(
+                        serie_historica, 
+                        x='FECHA', 
+                        y='Cantidad', 
+                        title='Evolución de Formularios por Mes',
+                        labels={'Cantidad': 'Cantidad de Formularios', 'FECHA': 'Mes'},
+                        markers=True
+                    )
+                    
+                    # Personalizar el diseño del gráfico
+                    fig_historia.update_layout(
+                        xaxis=dict(
+                            title='Fecha',
+                            title_font_size=14,
+                            tickfont_size=12,
+                            gridcolor='lightgray',
+                            tickformat='%b %Y'  # Formato de mes y año
+                        ),
+                        yaxis=dict(
+                            title='Cantidad de Formularios',
+                            title_font_size=14,
+                            tickfont_size=12,
+                            gridcolor='lightgray'
+                        ),
+                        plot_bgcolor='white'
+                    )
+                    
+                    # Mostrar el gráfico
+                    st.plotly_chart(fig_historia)
+                    
+                    # Mostrar tabla de datos
+                    with st.expander("Ver datos de la serie histórica"):
+                        # Crear una tabla para mostrar los datos
+                        tabla_data = serie_historica.copy()
+                        tabla_data['Mes-Año'] = tabla_data['FECHA'].dt.strftime('%b %Y')
+                        st.dataframe(
+                            tabla_data[['Mes-Año', 'Cantidad']].sort_values('FECHA', ascending=False),
+                            hide_index=True
+                        )
+            except Exception:
+                # Silenciar errores
+                pass
+    except Exception:
+        # Silenciar errores
+        pass
+    
+    # Línea divisoria en gris claro
+    st.markdown("<hr style='border: 2px solid #cccccc;'>", unsafe_allow_html=True)
+
+        
+
+def mostrar_recupero(df_recupero, df_localidad_municipio, geojson_data):
+    """
+    Muestra los datos de recupero del Banco de la Gente.
+    
+    Args:
+        df_recupero: DataFrame con datos de recupero
+        df_localidad_municipio: DataFrame con datos de departamentos
+        geojson_data: Datos GeoJSON para visualización geográfica
+    """
+    try:
+        st.subheader("Análisis de Recupero de Créditos")
+        
+        # Mostrar información básica
+        st.info("Información básica de recupero")
+        
+        # Crear KPIs simples
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total de Préstamos", f"{len(df_recupero):,}")
+        
+        with col2:
+            if 'MONTO_OTORGADO' in df_recupero.columns:
+                monto = df_recupero['MONTO_OTORGADO'].sum()
+                st.metric("Monto Total", f"${monto:,.2f}")
+            else:
+                st.metric("Monto Total", "No disponible")
+        
+        with col3:
+            if 'DEUDA' in df_recupero.columns:
+                deuda = df_recupero['DEUDA'].sum()
+                st.metric("Deuda Total", f"${deuda:,.2f}")
+            else:
+                st.metric("Deuda Total", "No disponible")
+        
+        # Mostrar una tabla simple con los primeros registros
+        st.subheader("Muestra de Datos")
+        st.dataframe(df_recupero.head(5))
+        
+    except Exception as e:
+        st.error(f"Error en recupero: {str(e)}")
